@@ -1,0 +1,293 @@
+# NetSentinel - Local Development Docker Compose
+# Usage: docker-compose up -d
+
+version: '3.8'
+
+services:
+  # ============================================================================
+  # DATABASE
+  # ============================================================================
+  postgres:
+    image: timescale/timescaledb:latest-pg15
+    container_name: netsentinel-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-netsentinel}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-netsentinel_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-netsentinel}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/scripts/init-db.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-netsentinel}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - netsentinel-network
+
+  # ============================================================================
+  # CACHE & MESSAGE QUEUE
+  # ============================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: netsentinel-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - netsentinel-network
+
+  # ============================================================================
+  # FLOW COLLECTOR (Go)
+  # ============================================================================
+  collector:
+    build:
+      context: ./collector
+      dockerfile: Dockerfile
+    container_name: netsentinel-collector
+    restart: unless-stopped
+    environment:
+      # Collector settings
+      COLLECTOR_UDP_PORT: 2055
+      COLLECTOR_BATCH_SIZE: 100
+      COLLECTOR_FLUSH_INTERVAL: 1s
+      # Backend connection
+      BACKEND_URL: http://backend:8000
+      COLLECTOR_API_KEY: ${COLLECTOR_API_KEY:-dev-collector-key}
+      # Logging
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      - "2055:2055/udp"  # NetFlow/IPFIX ingestion
+      - "8080:8080"      # Health/metrics endpoint
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - netsentinel-network
+
+  # ============================================================================
+  # BACKEND API (FastAPI)
+  # ============================================================================
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: netsentinel-backend
+    restart: unless-stopped
+    environment:
+      # Database
+      DATABASE_URL: postgresql://${POSTGRES_USER:-netsentinel}:${POSTGRES_PASSWORD:-netsentinel_dev}@postgres:5432/${POSTGRES_DB:-netsentinel}
+      # Redis
+      REDIS_URL: redis://redis:6379/0
+      # Security
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production}
+      COLLECTOR_API_KEY: ${COLLECTOR_API_KEY:-dev-collector-key}
+      # JWT Settings
+      ACCESS_TOKEN_EXPIRE_MINUTES: 60
+      REFRESH_TOKEN_EXPIRE_DAYS: 7
+      # CORS
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:5173}
+      # Logging
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Environment
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - ./ml/models:/app/ml_models:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - netsentinel-network
+
+  # ============================================================================
+  # CELERY WORKER
+  # ============================================================================
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: netsentinel-celery-worker
+    restart: unless-stopped
+    command: celery -A app.workers.celery_app worker --loglevel=info --concurrency=4
+    environment:
+      # Database
+      DATABASE_URL: postgresql://${POSTGRES_USER:-netsentinel}:${POSTGRES_PASSWORD:-netsentinel_dev}@postgres:5432/${POSTGRES_DB:-netsentinel}
+      # Redis
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      # ML Models path
+      ML_MODELS_PATH: /app/ml_models
+      # Logging
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    volumes:
+      - ./backend:/app
+      - ./ml/models:/app/ml_models
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - netsentinel-network
+
+  # ============================================================================
+  # CELERY BEAT (Scheduler)
+  # ============================================================================
+  celery-beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: netsentinel-celery-beat
+    restart: unless-stopped
+    command: celery -A app.workers.celery_app beat --loglevel=info
+    environment:
+      # Redis
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      # Logging
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    volumes:
+      - ./backend:/app
+    depends_on:
+      - celery-worker
+    networks:
+      - netsentinel-network
+
+  # ============================================================================
+  # ML SERVICE (Optional standalone, or runs in celery-worker)
+  # ============================================================================
+  # ml-service:
+  #   build:
+  #     context: ./ml
+  #     dockerfile: Dockerfile
+  #   container_name: netsentinel-ml
+  #   restart: unless-stopped
+  #   environment:
+  #     DATABASE_URL: postgresql://${POSTGRES_USER:-netsentinel}:${POSTGRES_PASSWORD:-netsentinel_dev}@postgres:5432/${POSTGRES_DB:-netsentinel}
+  #     MODELS_PATH: /app/models
+  #   volumes:
+  #     - ./ml:/app
+  #     - ml_models:/app/models
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #   networks:
+  #     - netsentinel-network
+
+  # ============================================================================
+  # FRONTEND (React)
+  # ============================================================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: development
+    container_name: netsentinel-frontend
+    restart: unless-stopped
+    environment:
+      VITE_API_URL: ${VITE_API_URL:-http://localhost:8000/api/v1}
+      NODE_ENV: ${NODE_ENV:-development}
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/public:/app/public
+    depends_on:
+      - backend
+    networks:
+      - netsentinel-network
+
+  # ============================================================================
+  # NGINX (Production reverse proxy - optional for dev)
+  # ============================================================================
+  # nginx:
+  #   image: nginx:alpine
+  #   container_name: netsentinel-nginx
+  #   restart: unless-stopped
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./infra/docker/nginx.conf:/etc/nginx/nginx.conf:ro
+  #     - ./infra/docker/ssl:/etc/nginx/ssl:ro
+  #   depends_on:
+  #     - backend
+  #     - frontend
+  #   networks:
+  #     - netsentinel-network
+
+  # ============================================================================
+  # MONITORING (Optional)
+  # ============================================================================
+  # prometheus:
+  #   image: prom/prometheus:latest
+  #   container_name: netsentinel-prometheus
+  #   ports:
+  #     - "9090:9090"
+  #   volumes:
+  #     - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+  #   networks:
+  #     - netsentinel-network
+
+  # grafana:
+  #   image: grafana/grafana:latest
+  #   container_name: netsentinel-grafana
+  #   ports:
+  #     - "3001:3000"
+  #   environment:
+  #     GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+  #   volumes:
+  #     - grafana_data:/var/lib/grafana
+  #   networks:
+  #     - netsentinel-network
+
+# ============================================================================
+# NETWORKS
+# ============================================================================
+networks:
+  netsentinel-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+# ============================================================================
+# VOLUMES
+# ============================================================================
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  ml_models:
+    driver: local
+  grafana_data:
+    driver: local
