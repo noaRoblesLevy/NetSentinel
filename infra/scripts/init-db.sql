@@ -477,7 +477,8 @@ CREATE INDEX idx_notifications_site ON notification_settings(site_id, is_enabled
 -- ============================================================================
 
 CREATE TABLE audit_log (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID DEFAULT uuid_generate_v4(),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
     -- Who
     user_id UUID REFERENCES users(id),
@@ -495,12 +496,12 @@ CREATE TABLE audit_log (
     ip_address INET,
     user_agent TEXT,
 
-    -- When
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    -- Composite primary key including partition column (required by TimescaleDB)
+    PRIMARY KEY (id, created_at)
 );
 
 -- Convert to hypertable for automatic partitioning
-SELECT create_hypertable('audit_log', 'created_at', chunk_time_interval => INTERVAL '1 month');
+SELECT create_hypertable('audit_log', 'created_at', chunk_time_interval => INTERVAL '1 month', migrate_data => true);
 
 -- Retention: 1 year
 SELECT add_retention_policy('audit_log', INTERVAL '365 days');
