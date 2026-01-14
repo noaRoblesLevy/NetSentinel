@@ -12,11 +12,13 @@ WORKDIR /build
 RUN apk add --no-cache git ca-certificates
 
 # Copy go mod files first for layer caching
-COPY go.mod go.sum* ./
-RUN go mod download
+COPY go.mod ./
 
-# Copy source code
+# Copy source code (needed for go mod tidy to resolve local packages)
 COPY . .
+
+# Generate go.sum and download dependencies
+RUN go mod tidy && go mod download
 
 # Build the binary
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
