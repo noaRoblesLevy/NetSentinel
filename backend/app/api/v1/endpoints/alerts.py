@@ -28,6 +28,7 @@ class AlertResponse(BaseModel):
     peak_score: Optional[float] = None
     start_time: datetime
     end_time: Optional[datetime] = None
+    explanation: Optional[dict] = None
     created_at: datetime
 
 
@@ -37,6 +38,7 @@ class AlertListResponse(BaseModel):
     total: int
     page: int
     page_size: int
+    pages: int
     summary: dict
 
 
@@ -138,6 +140,7 @@ async def list_alerts(
             total=total,
             page=page,
             page_size=page_size,
+            pages=(total + page_size - 1) // page_size if total > 0 else 1,
             summary={
                 "open": summary_row.open or 0,
                 "acknowledged": summary_row.acknowledged or 0,
@@ -160,8 +163,39 @@ async def list_alerts(
         )
 
 
+@router.get("/by-severity")
+def get_alerts_by_severity(
+    site_id: str,
+    db: Session = Depends(get_db)
+):
+    """Get alert counts by severity for pie chart."""
+    try:
+        result = db.execute(
+            text("""
+                SELECT
+                    COUNT(*) FILTER (WHERE severity = 'critical' AND status = 'open') as critical,
+                    COUNT(*) FILTER (WHERE severity = 'high' AND status = 'open') as high,
+                    COUNT(*) FILTER (WHERE severity = 'medium' AND status = 'open') as medium,
+                    COUNT(*) FILTER (WHERE severity = 'low' AND status = 'open') as low
+                FROM alerts
+                WHERE site_id = :site_id
+            """),
+            {"site_id": site_id}
+        )
+        row = result.fetchone()
+        return {
+            "critical": row.critical or 0,
+            "high": row.high or 0,
+            "medium": row.medium or 0,
+            "low": row.low or 0
+        }
+    except Exception as e:
+        logger.error(f"Failed to get alerts by severity: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/{alert_id}", response_model=AlertResponse)
-async def get_alert(
+def get_alert(
     alert_id: str,
     db: Session = Depends(get_db)
 ):
@@ -170,7 +204,8 @@ async def get_alert(
         result = db.execute(
             text("""
                 SELECT id, site_id, asset_id, alert_type, severity, status,
-                       title, description, peak_score, start_time, end_time, created_at
+                       title, description, peak_score, start_time, end_time,
+                       explanation, created_at
                 FROM alerts
                 WHERE id = :alert_id
             """),
@@ -196,6 +231,7 @@ async def get_alert(
             peak_score=row.peak_score,
             start_time=row.start_time,
             end_time=row.end_time,
+            explanation=row.explanation,
             created_at=row.created_at
         )
 
