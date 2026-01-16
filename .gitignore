@@ -160,3 +160,4 @@ junit.xml
 *.orig
 *.rej
 .cache/
+celerybeat-schedule
