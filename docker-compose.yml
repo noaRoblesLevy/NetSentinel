@@ -60,6 +60,8 @@ services:
       COLLECTOR_UDP_PORT: 2055
       COLLECTOR_BATCH_SIZE: 100
       COLLECTOR_FLUSH_INTERVAL: 1s
+      # Site configuration
+      DEFAULT_SITE_ID: "60b03fb5-0c97-4c4b-bd6e-79cb0b86db60"
       # Backend connection
       BACKEND_URL: http://backend:8000
       COLLECTOR_API_KEY: ${COLLECTOR_API_KEY:-dev-collector-key}
@@ -199,6 +201,23 @@ services:
   #       condition: service_healthy
   #   networks:
   #     - netsentinel-network
+
+  # ============================================================================
+  # FLOW GENERATOR (Test Data)
+  # ============================================================================
+  flow-generator:
+    build:
+      context: ./tools
+      dockerfile: Dockerfile
+    container_name: netsentinel-flow-generator
+    restart: unless-stopped
+    depends_on:
+      collector:
+        condition: service_healthy
+    networks:
+      - netsentinel-network
+    profiles:
+      - testing
 
   # ============================================================================
   # FRONTEND (React)
