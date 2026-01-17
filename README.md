@@ -4,14 +4,33 @@
 
 NetSentinel is a self-hosted network anomaly detection platform that uses NetFlow/IPFIX metadata to learn "normal" network behavior and generate explainable alerts when deviations occur.
 
+> **Version 1.0** - Production-ready for pilot deployments
+
+## What This Does
+
+- **Detects unusual network behavior** by comparing current traffic patterns to learned baselines
+- **Explains alerts in plain language** - "Device X is contacting 150 external destinations instead of the usual 12"
+- **Learns automatically** - no manual rule-writing required; just point your NetFlow exporters at it
+- **Discovers devices** - builds an inventory of network assets without manual configuration
+- **Suppresses noise** - deduplicates alerts, applies persistence rules, and groups related anomalies
+
+## What This Does NOT Do
+
+- **Packet inspection** - only flow metadata is analyzed (src/dst IP, ports, bytes, timestamps)
+- **Signature-based detection** - no malware signatures or IOC matching
+- **Guaranteed threat detection** - anomaly ≠ malicious; human review is required
+- **Replace a SIEM/SOC** - this is a lightweight anomaly detector, not a full security platform
+- **Scale to enterprise** - designed for SME networks (up to 200 devices, 20K flows/min)
+
 ## Features
 
 - **Flow Collection**: Ingests NetFlow v5/v9/IPFIX from routers, firewalls, and switches
-- **Behavioral Baseline**: Learns normal patterns over 7-14 days
+- **Behavioral Baseline**: Learns normal patterns over 7-14 days (configurable)
 - **Anomaly Detection**: Uses Isolation Forest ML to score deviations
-- **Explainable Alerts**: Every alert includes "what changed" explanations
+- **Explainable Alerts**: Every alert includes "what changed" explanations in plain English
 - **Device Discovery**: Automatically discovers and profiles network assets
 - **Investigation UI**: Modern React dashboard for quick triage
+- **Learning Mode**: Visual progress indicator, alerts suppressed until baseline is established
 - **Notifications**: Email, Slack, Teams, and webhook integrations
 
 ## Architecture
@@ -159,11 +178,40 @@ For larger deployments, see the scalability section in [docs/ARCHITECTURE.md](do
 
 ## Security
 
-- JWT-based authentication with refresh tokens
+- JWT-based authentication with access (60min) and refresh (7 day) tokens
 - Collector-to-backend API key authentication
+- Role-based access control (admin, analyst, viewer)
 - No packet payloads captured (metadata only)
 - Rate limiting on all endpoints
 - Non-root container execution
+- Parameterized queries (SQL injection protection)
+- Input validation on all API endpoints
+
+## Known Limitations
+
+1. **Learning period required**: The system needs 7-14 days of baseline data before reliable detection
+2. **No real-time alerting**: Anomalies are detected in 5-minute windows with ~2 minute delay
+3. **Single-site MVP**: Multi-tenant support exists but is not heavily tested
+4. **No HA/clustering**: Single-instance deployment only
+5. **English-only**: UI and explanations are in English only
+6. **IPv4 focus**: IPv6 support is basic
+
+## Troubleshooting
+
+### No flow data appearing
+1. Verify NetFlow is being sent: `tcpdump -i any udp port 2055`
+2. Check collector logs: `docker logs netsentinel-collector`
+3. Verify collector health: `curl http://localhost:8080/health`
+
+### Alerts not generating
+1. Check if site is in learning mode (7 days default)
+2. Verify Celery workers are running: `docker logs netsentinel-celery-worker`
+3. Confirm anomaly scores exist in the database
+
+### High memory usage
+1. Celery workers restart after 100 tasks automatically
+2. Reduce `worker_concurrency` in docker-compose.yml
+3. Ensure retention policies are active on TimescaleDB
 
 ## License
 

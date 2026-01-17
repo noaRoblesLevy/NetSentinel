@@ -1,13 +1,15 @@
 import { useQuery } from '@tanstack/react-query'
-import { AlertTriangle, Server, Activity, TrendingUp } from 'lucide-react'
+import { AlertTriangle, Server, Activity, TrendingUp, Info, AlertCircle, Loader2, CheckCircle2 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Alert as AlertUI, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Progress } from '@/components/ui/progress'
 import { FlowChart } from '@/components/charts/FlowChart'
 import { AnomalyChart } from '@/components/charts/AnomalyChart'
 import { SeverityChart } from '@/components/charts/SeverityChart'
 import { useSite } from '@/hooks/useSite'
-import api from '@/lib/api'
+import api, { SiteStatus } from '@/lib/api'
 import { formatBytes, formatNumber, formatRelativeTime } from '@/lib/utils'
 import { Link } from 'react-router-dom'
 import type { Alert } from '@/types'
@@ -60,8 +62,120 @@ function RecentAlertItem({ alert }: { alert: Alert }) {
   )
 }
 
+function LearningModeBanner({ status }: { status: SiteStatus }) {
+  const { learning, flow_status, warnings } = status
+
+  // Show flow status warning if not receiving
+  if (flow_status === 'no_data') {
+    return (
+      <AlertUI variant="destructive" className="mb-6">
+        <AlertCircle className="h-4 w-4" />
+        <AlertTitle>No Flow Data</AlertTitle>
+        <AlertDescription>
+          No network flow data has been received. Please verify that your network devices
+          are configured to send NetFlow/IPFIX data to port 2055.
+        </AlertDescription>
+      </AlertUI>
+    )
+  }
+
+  if (flow_status === 'stale') {
+    return (
+      <AlertUI variant="destructive" className="mb-6">
+        <AlertCircle className="h-4 w-4" />
+        <AlertTitle>Stale Flow Data</AlertTitle>
+        <AlertDescription>
+          Flow data has not been received recently. Check the collector connection.
+          {status.last_flow_received && (
+            <span className="block mt-1">
+              Last flow received: {formatRelativeTime(status.last_flow_received)}
+            </span>
+          )}
+        </AlertDescription>
+      </AlertUI>
+    )
+  }
+
+  // Learning mode banner
+  if (learning.is_learning) {
+    const phaseIcons = {
+      not_started: <Loader2 className="h-4 w-4 animate-spin" />,
+      collecting: <Activity className="h-4 w-4" />,
+      training: <Loader2 className="h-4 w-4 animate-spin" />,
+      complete: <CheckCircle2 className="h-4 w-4" />,
+    }
+
+    return (
+      <AlertUI className="mb-6 border-blue-500/50 bg-blue-500/10">
+        <Info className="h-4 w-4" />
+        <AlertTitle className="flex items-center gap-2">
+          Learning Mode Active
+          <Badge variant="secondary" className="text-xs">
+            Day {learning.progress_days} of {learning.target_days}
+          </Badge>
+        </AlertTitle>
+        <AlertDescription className="mt-2">
+          <p className="mb-2">{learning.message}</p>
+          <div className="flex items-center gap-4">
+            <Progress value={learning.progress_percent} className="flex-1 h-2" />
+            <span className="text-sm font-medium">{Math.round(learning.progress_percent)}%</span>
+          </div>
+          {learning.alerts_suppressed && (
+            <p className="text-sm mt-2 text-muted-foreground">
+              Alerts are suppressed during the learning period.
+            </p>
+          )}
+        </AlertDescription>
+      </AlertUI>
+    )
+  }
+
+  // Show warnings if any
+  if (warnings.length > 0) {
+    return (
+      <AlertUI variant="destructive" className="mb-6">
+        <AlertCircle className="h-4 w-4" />
+        <AlertTitle>System Warnings</AlertTitle>
+        <AlertDescription>
+          <ul className="list-disc list-inside">
+            {warnings.map((warning, idx) => (
+              <li key={idx}>{warning}</li>
+            ))}
+          </ul>
+        </AlertDescription>
+      </AlertUI>
+    )
+  }
+
+  return null
+}
+
+function EmptyState({ message, icon: Icon }: { message: string; icon: React.ElementType }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-8 text-center">
+      <Icon className="h-8 w-8 text-muted-foreground mb-2" />
+      <p className="text-sm text-muted-foreground">{message}</p>
+    </div>
+  )
+}
+
+function LoadingState() {
+  return (
+    <div className="flex items-center justify-center py-8">
+      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+    </div>
+  )
+}
+
 export function Overview() {
   const { selectedSiteId } = useSite()
+
+  const { data: siteStatus, isLoading: statusLoading } = useQuery({
+    queryKey: ['site-status', selectedSiteId],
+    queryFn: () => api.getSiteStatus(selectedSiteId!),
+    enabled: !!selectedSiteId,
+    refetchInterval: 30000, // Refresh every 30 seconds
+  })
 
   const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ['dashboard-stats', selectedSiteId],
@@ -69,25 +183,25 @@ export function Overview() {
     enabled: !!selectedSiteId,
   })
 
-  const { data: flowData } = useQuery({
+  const { data: flowData, isLoading: flowLoading } = useQuery({
     queryKey: ['flow-timeseries', selectedSiteId],
     queryFn: () => api.getFlowTimeSeries(selectedSiteId!, 24),
     enabled: !!selectedSiteId,
   })
 
-  const { data: anomalyData } = useQuery({
+  const { data: anomalyData, isLoading: anomalyLoading } = useQuery({
     queryKey: ['anomaly-timeseries', selectedSiteId],
     queryFn: () => api.getAnomalyTimeSeries(selectedSiteId!, 24),
     enabled: !!selectedSiteId,
   })
 
-  const { data: severityData } = useQuery({
+  const { data: severityData, isLoading: severityLoading } = useQuery({
     queryKey: ['alerts-severity', selectedSiteId],
     queryFn: () => api.getAlertsBySeverity(selectedSiteId!),
     enabled: !!selectedSiteId,
   })
 
-  const { data: recentAlerts } = useQuery({
+  const { data: recentAlerts, isLoading: alertsLoading } = useQuery({
     queryKey: ['recent-alerts', selectedSiteId],
     queryFn: () => api.getAlerts(selectedSiteId!, { status: ['open'] }, 1, 5),
     enabled: !!selectedSiteId,
@@ -115,6 +229,9 @@ export function Overview() {
           Network security monitoring dashboard
         </p>
       </div>
+
+      {/* Status Banner */}
+      {siteStatus && <LearningModeBanner status={siteStatus} />}
 
       {/* Stats Grid */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
