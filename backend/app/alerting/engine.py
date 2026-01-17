@@ -405,6 +405,37 @@ class AlertEngine:
         """Generate alerts for a single site."""
         alerts = []
 
+        # Check if site is in learning mode - suppress alerts if so
+        result = db.execute(
+            text("""
+                SELECT status, created_at,
+                       COALESCE((config->>'learning_days')::int, 7) as learning_days
+                FROM sites
+                WHERE id = :site_id
+            """),
+            {"site_id": site_id}
+        )
+        site_row = result.fetchone()
+
+        if site_row:
+            site_status = site_row.status
+            # Suppress alerts during onboarding and learning phases
+            if site_status in ('onboarding', 'learning'):
+                logger.debug(f"Site {site_id} is in {site_status} mode - alerts suppressed")
+                return []
+
+            # Also check if we have a trained model
+            model_result = db.execute(
+                text("""
+                    SELECT COUNT(*) FROM baseline_models
+                    WHERE site_id = :site_id AND is_active = true
+                """),
+                {"site_id": site_id}
+            )
+            if model_result.scalar() == 0:
+                logger.debug(f"Site {site_id} has no trained model - alerts suppressed")
+                return []
+
         # Get recent high scores
         result = db.execute(
             text("""
