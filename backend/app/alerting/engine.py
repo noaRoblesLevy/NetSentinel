@@ -14,7 +14,7 @@ import logging
 import os
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
@@ -43,6 +43,53 @@ PERSISTENCE_WINDOWS = {
 DEDUP_WINDOW_HOURS = 2
 
 
+# Human-readable feature name mappings (non-security jargon)
+FEATURE_DISPLAY_NAMES = {
+    "flows_in": "Incoming connections",
+    "flows_out": "Outgoing connections",
+    "bytes_in": "Data received",
+    "bytes_out": "Data sent",
+    "packets_in": "Packets received",
+    "packets_out": "Packets sent",
+    "unique_src_ips": "Devices connecting to this asset",
+    "unique_dst_ips": "Destinations contacted",
+    "unique_src_ports": "Source ports used",
+    "unique_dst_ports": "Destination ports contacted",
+    "dst_port_entropy": "Diversity of ports contacted",
+    "dst_ip_entropy": "Diversity of destinations",
+    "src_port_entropy": "Diversity of source ports",
+    "internal_dst_count": "Internal destinations",
+    "external_dst_count": "External destinations",
+    "internal_src_count": "Internal sources",
+    "external_src_count": "External sources",
+    "tcp_flows": "TCP connections",
+    "udp_flows": "UDP connections",
+    "icmp_flows": "ICMP packets",
+    "internal_external_ratio": "Internal vs external traffic ratio",
+    "avg_bytes_per_flow": "Average data per connection",
+    "avg_packets_per_flow": "Average packets per connection",
+}
+
+
+def format_value(feature_name: str, value: float) -> str:
+    """Format a feature value for human display."""
+    if "bytes" in feature_name.lower():
+        if value >= 1_000_000_000:
+            return f"{value / 1_000_000_000:.1f} GB"
+        elif value >= 1_000_000:
+            return f"{value / 1_000_000:.1f} MB"
+        elif value >= 1_000:
+            return f"{value / 1_000:.1f} KB"
+        else:
+            return f"{value:.0f} B"
+    elif "entropy" in feature_name.lower():
+        return f"{value:.2f}"
+    elif "ratio" in feature_name.lower():
+        return f"{value:.1%}"
+    else:
+        return f"{value:,.0f}"
+
+
 @dataclass
 class FeatureDeviation:
     """Represents a feature's deviation from baseline."""
@@ -53,26 +100,61 @@ class FeatureDeviation:
     deviation_multiplier: float
     direction: str  # "increase" or "decrease"
 
+    @property
+    def display_name(self) -> str:
+        """Get human-readable feature name."""
+        return FEATURE_DISPLAY_NAMES.get(self.feature_name, self.feature_name.replace("_", " ").title())
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "feature": self.feature_name,
+            "display_name": self.display_name,
             "current": self.current_value,
+            "current_formatted": format_value(self.feature_name, self.current_value),
             "baseline": self.baseline_value,
-            "deviation_pct": self.deviation_pct,
-            "multiplier": self.deviation_multiplier,
+            "baseline_formatted": format_value(self.feature_name, self.baseline_value),
+            "deviation_pct": round(self.deviation_pct, 1),
+            "multiplier": round(self.deviation_multiplier, 2),
             "direction": self.direction,
+            "explanation": self.to_plain_english(),
         }
 
     def to_human_readable(self) -> str:
-        """Generate human-readable deviation description."""
+        """Generate short human-readable deviation description."""
         if self.deviation_multiplier >= 2:
-            return f"{self.feature_name} {self.deviation_multiplier:.1f}x"
+            return f"{self.display_name} {self.deviation_multiplier:.1f}x higher"
         elif self.deviation_pct >= 100:
-            return f"{self.feature_name} +{self.deviation_pct:.0f}%"
+            return f"{self.display_name} +{self.deviation_pct:.0f}%"
         elif self.deviation_pct <= -50:
-            return f"{self.feature_name} {self.deviation_pct:.0f}%"
+            return f"{self.display_name} {self.deviation_pct:.0f}%"
         else:
-            return f"{self.feature_name} {'↑' if self.direction == 'increase' else '↓'}{abs(self.deviation_pct):.0f}%"
+            arrow = "increased" if self.direction == "increase" else "decreased"
+            return f"{self.display_name} {arrow} {abs(self.deviation_pct):.0f}%"
+
+    def to_plain_english(self) -> str:
+        """Generate detailed plain-English explanation."""
+        current_fmt = format_value(self.feature_name, self.current_value)
+        baseline_fmt = format_value(self.feature_name, self.baseline_value)
+
+        if self.deviation_multiplier >= 10:
+            intensity = "dramatically"
+        elif self.deviation_multiplier >= 5:
+            intensity = "significantly"
+        elif self.deviation_multiplier >= 2:
+            intensity = "notably"
+        else:
+            intensity = "moderately"
+
+        if self.direction == "increase":
+            return (
+                f"{self.display_name} {intensity} increased from typical {baseline_fmt} "
+                f"to {current_fmt} ({self.deviation_multiplier:.1f}x normal)"
+            )
+        else:
+            return (
+                f"{self.display_name} {intensity} decreased from typical {baseline_fmt} "
+                f"to {current_fmt} ({abs(self.deviation_pct):.0f}% lower)"
+            )
 
 
 @dataclass
@@ -111,36 +193,91 @@ class AlertCandidate:
         return hashlib.md5(key_str.encode()).hexdigest()[:16]
 
     def to_explanation_json(self) -> Dict[str, Any]:
-        """Generate structured explanation JSON."""
+        """Generate structured explanation JSON with human-readable content."""
         return {
             "summary": self._generate_summary(),
+            "plain_english": self._generate_plain_english_explanation(),
             "severity_reason": self._get_severity_reason(),
+            "what_changed": self._generate_what_changed(),
             "top_deviations": [d.to_dict() for d in self.feature_deviations[:5]],
             "statistics": {
-                "peak_score": self.peak_score,
-                "avg_score": self.avg_score,
+                "peak_score": round(self.peak_score, 3),
+                "avg_score": round(self.avg_score, 3),
                 "consecutive_windows": self.consecutive_windows,
-                "window_start": self.window_start.isoformat(),
-                "window_end": self.window_end.isoformat(),
+                "duration_minutes": self.consecutive_windows * 5,
+                "window_start": self.window_start.isoformat() + "Z",
+                "window_end": self.window_end.isoformat() + "Z",
             },
             "raw_contributions": self.raw_explanation,
         }
 
     def _generate_summary(self) -> str:
-        """Generate human-readable summary."""
+        """Generate brief human-readable summary."""
+        if not self.feature_deviations:
+            return f"Unusual network behavior detected on {self.asset_name}"
+
         deviation_strs = [d.to_human_readable() for d in self.feature_deviations[:3]]
-        return f"Anomalous behavior: {', '.join(deviation_strs)}"
+        return f"Unusual activity: {', '.join(deviation_strs)}"
+
+    def _generate_plain_english_explanation(self) -> str:
+        """Generate detailed plain-English explanation for non-technical users."""
+        if not self.feature_deviations:
+            return (
+                f"The device '{self.asset_name}' ({self.asset_ip}) is behaving differently "
+                f"from its normal pattern. This may indicate a configuration change, "
+                f"new software, or potentially suspicious activity."
+            )
+
+        explanations = [d.to_plain_english() for d in self.feature_deviations[:3]]
+        joined = ". ".join(explanations)
+
+        severity_text = {
+            "critical": "requires immediate attention",
+            "high": "should be investigated soon",
+            "medium": "warrants review",
+            "low": "may be worth noting",
+        }.get(self.severity, "was detected")
+
+        return (
+            f"The device '{self.asset_name}' ({self.asset_ip}) is showing unusual behavior that "
+            f"{severity_text}. {joined}. "
+            f"This behavior has been observed for {self.consecutive_windows * 5} minutes."
+        )
+
+    def _generate_what_changed(self) -> List[Dict[str, Any]]:
+        """Generate a simple what-changed list for display."""
+        changes = []
+        for d in self.feature_deviations[:5]:
+            changes.append({
+                "metric": d.display_name,
+                "was": format_value(d.feature_name, d.baseline_value),
+                "now": format_value(d.feature_name, d.current_value),
+                "change": f"{d.deviation_pct:+.0f}%" if abs(d.deviation_pct) < 1000 else f"{d.deviation_multiplier:.1f}x",
+            })
+        return changes
 
     def _get_severity_reason(self) -> str:
-        """Explain why this severity was assigned."""
+        """Explain why this severity was assigned in plain English."""
         if self.severity == "critical":
-            return f"Single window score of {self.peak_score:.2f} exceeds critical threshold ({CRITICAL_THRESHOLD})"
+            return (
+                f"Critical: The anomaly score ({self.peak_score:.0%}) indicates highly unusual "
+                f"behavior that exceeds the critical threshold. Immediate review recommended."
+            )
         elif self.severity == "high":
-            return f"Score exceeded {HIGH_THRESHOLD} for {self.consecutive_windows} consecutive windows"
+            return (
+                f"High: Unusual behavior persisted for {self.consecutive_windows * 5} minutes "
+                f"with scores consistently above {HIGH_THRESHOLD:.0%}. Prompt investigation advised."
+            )
         elif self.severity == "medium":
-            return f"Score exceeded {MEDIUM_THRESHOLD} for {self.consecutive_windows} consecutive windows"
+            return (
+                f"Medium: Unusual behavior observed over {self.consecutive_windows * 5} minutes. "
+                f"This pattern warrants attention but may not be urgent."
+            )
         else:
-            return f"Score of {self.peak_score:.2f} indicates potential anomaly"
+            return (
+                f"Low: Minor deviation from normal behavior detected. "
+                f"Review when convenient to confirm expected activity."
+            )
 
 
 class AlertEngine:
