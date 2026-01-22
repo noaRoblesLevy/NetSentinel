@@ -8,7 +8,8 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Site
+from app.models import Site, User
+from app.api.v1.endpoints.auth import get_current_user, require_viewer, require_admin
 
 router = APIRouter()
 
@@ -26,7 +27,7 @@ class SiteResponse(BaseModel):
 
 
 @router.get("", response_model=List[SiteResponse])
-def get_sites(db: Session = Depends(get_db)):
+def get_sites(db: Session = Depends(get_db), current_user: User = Depends(require_viewer)):
     """Get all sites."""
     sites = db.query(Site).all()
     return [
@@ -43,7 +44,7 @@ def get_sites(db: Session = Depends(get_db)):
 
 
 @router.get("/{site_id}", response_model=SiteResponse)
-def get_site(site_id: UUID, db: Session = Depends(get_db)):
+def get_site(site_id: UUID, db: Session = Depends(get_db), current_user: User = Depends(require_viewer)):
     """Get a specific site."""
     site = db.query(Site).filter(Site.id == site_id).first()
     if not site:

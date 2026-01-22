@@ -8,6 +8,8 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.models import User
+from app.api.v1.endpoints.auth import require_viewer
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -16,7 +18,8 @@ router = APIRouter()
 @router.get("/stats")
 def get_dashboard_stats(
     site_id: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_viewer)
 ):
     """Get dashboard statistics for the frontend."""
     try:
@@ -73,7 +76,8 @@ def get_dashboard_stats(
 def get_flow_timeseries(
     site_id: str,
     hours: int = 24,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_viewer)
 ):
     """Get flow time series for charts."""
     try:
@@ -129,7 +133,8 @@ def get_flow_timeseries(
 def get_anomaly_timeseries(
     site_id: str,
     hours: int = 24,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_viewer)
 ):
     """Get anomaly score time series based on alert counts per hour."""
     try:
@@ -177,7 +182,8 @@ def get_anomaly_timeseries(
 @router.get("/overview")
 async def get_dashboard_overview(
     site_id: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_viewer)
 ):
     """Get dashboard overview statistics."""
     try:
@@ -264,7 +270,8 @@ async def get_dashboard_overview(
 async def get_traffic_chart(
     site_id: str,
     hours: int = 24,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_viewer)
 ):
     """Get traffic time-series for charts."""
     try:

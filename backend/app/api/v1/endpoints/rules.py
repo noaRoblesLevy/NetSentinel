@@ -11,6 +11,8 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.models import User
+from app.api.v1.endpoints.auth import require_viewer, require_analyst, require_admin
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -79,7 +81,8 @@ def ensure_rules_table(db: Session):
 @router.get("", response_model=List[RuleResponse])
 def get_rules(
     site_id: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_viewer)
 ):
     """Get all rules for a site."""
     try:
@@ -120,7 +123,8 @@ def get_rules(
 @router.get("/{rule_id}", response_model=RuleResponse)
 def get_rule(
     rule_id: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_viewer)
 ):
     """Get a specific rule."""
     try:
@@ -160,7 +164,8 @@ def get_rule(
 @router.post("", response_model=RuleResponse, status_code=status.HTTP_201_CREATED)
 def create_rule(
     rule: RuleCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_analyst)
 ):
     """Create a new rule."""
     import json
@@ -201,7 +206,8 @@ def create_rule(
 def update_rule(
     rule_id: str,
     rule: RuleUpdate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_analyst)
 ):
     """Update a rule."""
     import json
@@ -250,7 +256,8 @@ def update_rule(
 @router.delete("/{rule_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_rule(
     rule_id: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
 ):
     """Delete a rule."""
     try:

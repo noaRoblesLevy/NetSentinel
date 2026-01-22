@@ -15,6 +15,8 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.database import get_db
+from app.models import User
+from app.api.v1.endpoints.auth import require_viewer
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -264,7 +266,8 @@ async def ingest_flows(
 @router.get("/stats")
 async def get_flow_stats(
     site_id: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_viewer)
 ):
     """Get flow ingestion statistics for a site."""
     try:

@@ -10,6 +10,8 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.models import User
+from app.api.v1.endpoints.auth import get_current_user, require_viewer, require_analyst
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -56,7 +58,8 @@ async def list_alerts(
     asset_id: Optional[str] = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_viewer)
 ):
     """List alerts with filtering and pagination."""
     try:
@@ -166,7 +169,8 @@ async def list_alerts(
 @router.get("/by-severity")
 def get_alerts_by_severity(
     site_id: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_viewer)
 ):
     """Get alert counts by severity for pie chart."""
     try:
@@ -197,7 +201,8 @@ def get_alerts_by_severity(
 @router.get("/{alert_id}", response_model=AlertResponse)
 def get_alert(
     alert_id: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_viewer)
 ):
     """Get detailed alert information."""
     try:
@@ -249,7 +254,8 @@ def get_alert(
 async def update_alert(
     alert_id: str,
     update: AlertUpdate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_analyst)
 ):
     """Update alert status."""
     try:

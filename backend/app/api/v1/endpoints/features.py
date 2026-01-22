@@ -12,6 +12,8 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.models import User
+from app.api.v1.endpoints.auth import require_viewer, require_analyst
 
 router = APIRouter()
 
@@ -104,6 +106,7 @@ async def list_features(
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_viewer),
 ):
     """
     List feature vectors for a site.
@@ -168,6 +171,7 @@ async def get_feature_stats(
     start_time: Optional[datetime] = Query(None, description="Start of time range"),
     end_time: Optional[datetime] = Query(None, description="End of time range"),
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_viewer),
 ):
     """
     Get aggregated statistics for feature vectors.
@@ -210,6 +214,7 @@ async def get_high_entropy_features(
     hours: int = Query(24, ge=1, le=168, description="Hours to look back"),
     limit: int = Query(50, ge=1, le=500),
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_viewer),
 ):
     """
     Get feature vectors with high entropy (potential anomalies).
@@ -262,6 +267,7 @@ async def get_high_entropy_features(
 async def trigger_aggregation(
     site_id: Optional[UUID] = Query(None, description="Specific site to aggregate"),
     window_start: Optional[datetime] = Query(None, description="Specific window to process"),
+    current_user: User = Depends(require_analyst),
 ):
     """
     Manually trigger the aggregation job.
@@ -288,6 +294,7 @@ async def get_asset_timeline(
     asset_id: UUID,
     hours: int = Query(24, ge=1, le=168, description="Hours to look back"),
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_viewer),
 ):
     """
     Get feature vector timeline for a specific asset.

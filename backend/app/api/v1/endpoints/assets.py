@@ -11,6 +11,8 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.models import User
+from app.api.v1.endpoints.auth import get_current_user, require_viewer, require_analyst
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -53,7 +55,8 @@ async def list_assets(
     search: Optional[str] = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_viewer)
 ):
     """List discovered assets for a site."""
     try:
@@ -125,7 +128,8 @@ async def list_assets(
 @router.get("/{asset_id}", response_model=AssetResponse)
 async def get_asset(
     asset_id: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_viewer)
 ):
     """Get detailed asset information."""
     try:
@@ -173,7 +177,8 @@ async def get_asset(
 async def update_asset(
     asset_id: str,
     update: AssetUpdate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_analyst)
 ):
     """Update asset details."""
     try:
