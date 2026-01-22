@@ -571,3 +571,142 @@ def change_password(
     logger.info(f"Password changed for user: {current_user.email}")
 
     return {"message": "Password changed successfully. Please log in again."}
+
+
+# Password Reset Token Expiry
+RESET_TOKEN_EXPIRE_MINUTES = 30
+
+
+def create_reset_token(email: str) -> str:
+    """Create a password reset JWT token with short expiry."""
+    expire = datetime.utcnow() + timedelta(minutes=RESET_TOKEN_EXPIRE_MINUTES)
+    to_encode = {
+        "sub": email,
+        "type": "password_reset",
+        "exp": expire,
+        "iat": datetime.utcnow()
+    }
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def decode_reset_token(token: str) -> str:
+    """Decode and validate a password reset token. Returns email if valid."""
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        if payload.get("type") != "password_reset":
+            raise JWTError("Invalid token type")
+        email = payload.get("sub")
+        if not email:
+            raise JWTError("No email in token")
+        return email
+    except JWTError as e:
+        logger.warning(f"Reset token decode failed: {e}")
+        raise
+
+
+class ForgotPasswordRequest(BaseModel):
+    """Request model for forgot password."""
+    email: str
+
+
+class ResetPasswordRequest(BaseModel):
+    """Request model for password reset."""
+    token: str
+    new_password: str
+
+
+@router.post("/forgot-password")
+def forgot_password(
+    request: ForgotPasswordRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Request a password reset email.
+
+    If the email exists, a reset link will be generated. The response is always
+    the same whether or not the email exists (to prevent email enumeration).
+
+    Note: In production, this would send an actual email. For now, the reset
+    link is logged for testing purposes.
+    """
+    # Always return same response to prevent email enumeration
+    response_msg = "If that email address is registered, you will receive a password reset link."
+
+    user = db.query(User).filter(User.email == request.email).first()
+
+    if user and user.is_active:
+        # Generate reset token
+        reset_token = create_reset_token(user.email)
+
+        # In production, send email here
+        # For now, log the reset link (would be removed in production)
+        reset_url = f"/reset-password?token={reset_token}"
+        logger.info(f"Password reset requested for {user.email}. Reset URL: {reset_url}")
+
+        # TODO: Integrate with email service
+        # send_reset_email(user.email, reset_url)
+    else:
+        # Log for security monitoring but don't reveal to user
+        logger.info(f"Password reset requested for non-existent/inactive email: {request.email}")
+
+    return {"message": response_msg}
+
+
+@router.post("/reset-password")
+def reset_password(
+    request: ResetPasswordRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Reset password using a valid reset token.
+
+    The token must be from a /forgot-password request and not expired.
+    """
+    try:
+        email = decode_reset_token(request.token)
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired reset token"
+        )
+
+    # Check if token is blacklisted (already used)
+    if is_token_blacklisted(request.token):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This reset link has already been used"
+        )
+
+    # Find user
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid reset token"
+        )
+
+    # Validate new password
+    if len(request.new_password) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password must be at least 8 characters long"
+        )
+
+    # Hash and save new password
+    new_hash = hash_password(request.new_password)
+    db.execute(
+        text("UPDATE users SET hashed_password = :password, updated_at = NOW() WHERE id = :user_id"),
+        {"password": new_hash, "user_id": str(user.id)}
+    )
+    db.commit()
+
+    # Blacklist the reset token so it can't be used again
+    blacklist_token(request.token)
+
+    # Invalidate all existing sessions for this user
+    from app.services.token_blacklist import blacklist_user_tokens
+    blacklist_user_tokens(user.email)
+
+    logger.info(f"Password reset completed for user: {user.email}")
+
+    return {"message": "Password has been reset successfully. Please log in with your new password."}

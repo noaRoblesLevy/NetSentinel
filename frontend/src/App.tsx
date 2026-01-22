@@ -11,6 +11,8 @@ import { DeviceProfile } from '@/pages/DeviceProfile'
 import { Rules } from '@/pages/Rules'
 import { Settings } from '@/pages/Settings'
 import { Login } from '@/pages/Login'
+import { ForgotPassword } from '@/pages/ForgotPassword'
+import { ResetPassword } from '@/pages/ResetPassword'
 import { NotFound } from '@/pages/NotFound'
 import { useAuth } from '@/hooks/useAuth'
 
@@ -46,6 +48,14 @@ function AppRoutes() {
       <Route
         path="/login"
         element={isAuthenticated ? <Navigate to="/" replace /> : <Login />}
+      />
+      <Route
+        path="/forgot-password"
+        element={isAuthenticated ? <Navigate to="/" replace /> : <ForgotPassword />}
+      />
+      <Route
+        path="/reset-password"
+        element={isAuthenticated ? <Navigate to="/" replace /> : <ResetPassword />}
       />
       <Route
         path="/"

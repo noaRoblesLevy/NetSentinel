@@ -123,6 +123,19 @@ class ApiClient {
     this._isAuthenticated = false
   }
 
+  async forgotPassword(email: string): Promise<{ message: string }> {
+    const response = await this.client.post<{ message: string }>('/auth/forgot-password', { email })
+    return response.data
+  }
+
+  async resetPassword(token: string, newPassword: string): Promise<{ message: string }> {
+    const response = await this.client.post<{ message: string }>('/auth/reset-password', {
+      token,
+      new_password: newPassword,
+    })
+    return response.data
+  }
+
   // Settings
   async getNotificationSettings(siteId: string): Promise<NotificationSettings> {
     const response = await this.client.get<{ site_id: string; settings: NotificationSettings }>(
