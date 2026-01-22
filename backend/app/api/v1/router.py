@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import health, flows, assets, alerts, dashboard, features, auth, sites, rules
+from app.api.v1.endpoints import health, flows, assets, alerts, dashboard, features, auth, sites, rules, settings
 
 api_router = APIRouter()
 
@@ -16,3 +16,4 @@ api_router.include_router(alerts.router, prefix="/alerts", tags=["Alerts"])
 api_router.include_router(dashboard.router, prefix="/dashboard", tags=["Dashboard"])
 api_router.include_router(features.router, prefix="/features", tags=["Features"])
 api_router.include_router(rules.router, prefix="/rules", tags=["Rules"])
+api_router.include_router(settings.router, prefix="/settings", tags=["Settings"])

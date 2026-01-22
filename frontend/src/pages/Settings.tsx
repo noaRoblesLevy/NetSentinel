@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   User,
@@ -83,14 +83,24 @@ function ProfileSettings({ user }: { user: any }) {
   const [email, setEmail] = useState(user?.email || '')
   const [isSaving, setIsSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [error, setError] = useState('')
+  const { checkAuth } = useAuth()
 
   const handleSave = async () => {
     setIsSaving(true)
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    setIsSaving(false)
-    setSaved(true)
-    setTimeout(() => setSaved(false), 3000)
+    setError('')
+    try {
+      const { default: api } = await import('@/lib/api')
+      await api.updateProfile({ full_name: fullName, email })
+      setSaved(true)
+      setTimeout(() => setSaved(false), 3000)
+      // Refresh user data
+      checkAuth()
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Failed to update profile')
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   return (
@@ -99,6 +109,12 @@ function ProfileSettings({ user }: { user: any }) {
         <CardTitle>Profile Information</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
+        {error && (
+          <div className="p-3 text-sm text-red-500 bg-red-50 dark:bg-red-950/50 rounded-lg">
+            {error}
+          </div>
+        )}
+
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
             <label className="text-sm font-medium">Full Name</label>
@@ -147,7 +163,7 @@ function ProfileSettings({ user }: { user: any }) {
 }
 
 function NotificationSettings({ siteId }: { siteId: string | null }) {
-  const [emailEnabled, setEmailEnabled] = useState(true)
+  const [emailEnabled, setEmailEnabled] = useState(false)
   const [emailAddress, setEmailAddress] = useState('')
   const [webhookEnabled, setWebhookEnabled] = useState(false)
   const [webhookUrl, setWebhookUrl] = useState('')
@@ -155,11 +171,63 @@ function NotificationSettings({ siteId }: { siteId: string | null }) {
   const [slackWebhook, setSlackWebhook] = useState('')
   const [minSeverity, setMinSeverity] = useState('medium')
   const [isSaving, setIsSaving] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [saved, setSaved] = useState(false)
+
+  // Load notification settings on mount or when siteId changes
+  useEffect(() => {
+    if (!siteId) {
+      setIsLoading(false)
+      return
+    }
+    const loadSettings = async () => {
+      setIsLoading(true)
+      setError('')
+      try {
+        const { default: api } = await import('@/lib/api')
+        const settings = await api.getNotificationSettings(siteId)
+        setEmailEnabled(settings.email_enabled)
+        setEmailAddress(settings.email_address || '')
+        setWebhookEnabled(settings.webhook_enabled)
+        setWebhookUrl(settings.webhook_url || '')
+        setSlackEnabled(settings.slack_enabled)
+        setSlackWebhook(settings.slack_webhook_url || '')
+        setMinSeverity(settings.min_severity || 'medium')
+      } catch (err: any) {
+        // If 404 or no settings exist, use defaults
+        if (err.response?.status !== 404) {
+          setError(err.response?.data?.detail || 'Failed to load notification settings')
+        }
+      } finally {
+        setIsLoading(false)
+      }
+    }
+    loadSettings()
+  }, [siteId])
 
   const handleSave = async () => {
+    if (!siteId) return
     setIsSaving(true)
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    setIsSaving(false)
+    setError('')
+    try {
+      const { default: api } = await import('@/lib/api')
+      await api.updateNotificationSettings(siteId, {
+        email_enabled: emailEnabled,
+        email_address: emailAddress || undefined,
+        webhook_enabled: webhookEnabled,
+        webhook_url: webhookUrl || undefined,
+        slack_enabled: slackEnabled,
+        slack_webhook_url: slackWebhook || undefined,
+        min_severity: minSeverity as 'low' | 'medium' | 'high' | 'critical',
+      })
+      setSaved(true)
+      setTimeout(() => setSaved(false), 3000)
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Failed to save notification settings')
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   if (!siteId) {
@@ -172,8 +240,24 @@ function NotificationSettings({ siteId }: { siteId: string | null }) {
     )
   }
 
+  if (isLoading) {
+    return (
+      <Card>
+        <CardContent className="py-8 text-center text-muted-foreground">
+          Loading notification settings...
+        </CardContent>
+      </Card>
+    )
+  }
+
   return (
     <div className="space-y-6">
+      {error && (
+        <div className="p-3 text-sm text-red-500 bg-red-50 dark:bg-red-950/50 rounded-lg">
+          {error}
+        </div>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -307,7 +391,7 @@ function NotificationSettings({ siteId }: { siteId: string | null }) {
 
           <div className="flex justify-end">
             <Button onClick={handleSave} disabled={isSaving}>
-              {isSaving ? 'Saving...' : 'Save Notification Settings'}
+              {isSaving ? 'Saving...' : saved ? 'Saved!' : 'Save Notification Settings'}
             </Button>
           </div>
         </CardContent>
@@ -323,9 +407,11 @@ function SecuritySettings() {
   const [showPasswords, setShowPasswords] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
 
   const handleChangePassword = async () => {
     setError('')
+    setSuccess('')
 
     if (newPassword !== confirmPassword) {
       setError('New passwords do not match')
@@ -338,11 +424,22 @@ function SecuritySettings() {
     }
 
     setIsSaving(true)
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    setIsSaving(false)
-    setCurrentPassword('')
-    setNewPassword('')
-    setConfirmPassword('')
+    try {
+      const { default: api } = await import('@/lib/api')
+      await api.changePassword(currentPassword, newPassword)
+      setSuccess('Password changed successfully. Redirecting to login...')
+      setCurrentPassword('')
+      setNewPassword('')
+      setConfirmPassword('')
+      // Redirect to login after password change
+      setTimeout(() => {
+        window.location.href = '/login'
+      }, 2000)
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Failed to change password')
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   return (
@@ -355,6 +452,12 @@ function SecuritySettings() {
           {error && (
             <div className="p-3 text-sm text-red-500 bg-red-50 dark:bg-red-950/50 rounded-lg">
               {error}
+            </div>
+          )}
+
+          {success && (
+            <div className="p-3 text-sm text-green-600 bg-green-50 dark:bg-green-950/50 rounded-lg">
+              {success}
             </div>
           )}
 

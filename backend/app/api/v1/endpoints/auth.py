@@ -476,3 +476,98 @@ def logout(
 
     logger.info(f"User logged out: {current_user.email}")
     return {"message": "Successfully logged out", "email": current_user.email}
+
+
+class ProfileUpdate(BaseModel):
+    """Request model for profile update."""
+    full_name: Optional[str] = None
+    email: Optional[str] = None
+
+
+@router.patch("/me", response_model=UserResponse)
+def update_profile(
+    update: ProfileUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Update the current user's profile information."""
+    updates = []
+    params = {"user_id": str(current_user.id)}
+
+    if update.full_name is not None:
+        updates.append("full_name = :full_name")
+        params["full_name"] = update.full_name
+
+    if update.email is not None:
+        # Check if email is already taken
+        existing = db.query(User).filter(User.email == update.email, User.id != current_user.id).first()
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email address is already in use"
+            )
+        updates.append("email = :email")
+        params["email"] = update.email
+
+    if updates:
+        updates.append("updated_at = NOW()")
+        query = f"UPDATE users SET {', '.join(updates)} WHERE id = :user_id"
+        db.execute(text(query), params)
+        db.commit()
+
+        # Refresh user data
+        db.refresh(current_user)
+
+    logger.info(f"Profile updated for user: {current_user.email}")
+
+    return UserResponse(
+        id=str(current_user.id),
+        email=current_user.email,
+        full_name=current_user.full_name,
+        role=current_user.role,
+        is_active=current_user.is_active
+    )
+
+
+class PasswordChange(BaseModel):
+    """Request model for password change."""
+    current_password: str
+    new_password: str
+
+
+@router.post("/change-password")
+def change_password(
+    request: PasswordChange,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Change the current user's password."""
+    # Verify current password
+    if not verify_password(request.current_password, current_user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect"
+        )
+
+    # Validate new password
+    if len(request.new_password) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="New password must be at least 8 characters long"
+        )
+
+    # Hash and save new password
+    new_hash = hash_password(request.new_password)
+    db.execute(
+        text("UPDATE users SET hashed_password = :password, updated_at = NOW() WHERE id = :user_id"),
+        {"password": new_hash, "user_id": str(current_user.id)}
+    )
+    db.commit()
+
+    # Invalidate all existing tokens for this user
+    from app.services.token_blacklist import blacklist_user_tokens
+    blacklist_user_tokens(current_user.email)
+
+    logger.info(f"Password changed for user: {current_user.email}")
+
+    return {"message": "Password changed successfully. Please log in again."}

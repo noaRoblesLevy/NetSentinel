@@ -191,3 +191,14 @@ export interface PaginatedResponse<T> {
   page_size: number
   pages: number
 }
+
+// Settings
+export interface NotificationSettings {
+  email_enabled: boolean
+  email_address?: string
+  webhook_enabled: boolean
+  webhook_url?: string
+  slack_enabled: boolean
+  slack_webhook_url?: string
+  min_severity: 'low' | 'medium' | 'high' | 'critical'
+}

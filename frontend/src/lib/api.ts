@@ -8,6 +8,7 @@ import type {
   FeatureVector,
   FlowStats,
   LoginRequest,
+  NotificationSettings,
   PaginatedResponse,
   Rule,
   Site,
@@ -106,6 +107,36 @@ class ApiClient {
   async getCurrentUser(): Promise<User> {
     const response = await this.client.get<User>('/auth/me')
     return response.data
+  }
+
+  async updateProfile(data: { full_name?: string; email?: string }): Promise<User> {
+    const response = await this.client.patch<User>('/auth/me', data)
+    return response.data
+  }
+
+  async changePassword(currentPassword: string, newPassword: string): Promise<void> {
+    await this.client.post('/auth/change-password', {
+      current_password: currentPassword,
+      new_password: newPassword,
+    })
+    // Password change invalidates all sessions, so mark as unauthenticated
+    this._isAuthenticated = false
+  }
+
+  // Settings
+  async getNotificationSettings(siteId: string): Promise<NotificationSettings> {
+    const response = await this.client.get<{ site_id: string; settings: NotificationSettings }>(
+      `/settings/notifications/${siteId}`
+    )
+    return response.data.settings
+  }
+
+  async updateNotificationSettings(siteId: string, settings: NotificationSettings): Promise<NotificationSettings> {
+    const response = await this.client.put<{ site_id: string; settings: NotificationSettings }>(
+      `/settings/notifications/${siteId}`,
+      settings
+    )
+    return response.data.settings
   }
 
   // Sites
