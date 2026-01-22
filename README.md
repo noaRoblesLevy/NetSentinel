@@ -58,8 +58,8 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed architecture docum
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/your-org/netsentinel.git
-cd netsentinel
+git clone https://github.com/noaRoblesLevy/NetSentinel.git
+cd NetSentinel
 ```
 
 2. Copy and configure environment:
@@ -80,9 +80,13 @@ docker-compose up -d
 - **API Docs**: http://localhost:8000/docs
 - **Flow Collector**: UDP port 2055
 
-5. Default login:
-- Email: `admin@netsentinel.local`
-- Password: `changeme` (change immediately!)
+5. Create your admin account:
+```bash
+# Using the CLI tool
+docker exec -it netsentinel-backend python -m app.cli create-admin --email your@email.com
+
+# Or use the first-run setup wizard at http://localhost:3000/setup
+```
 
 ### Configure NetFlow Export
 
@@ -215,13 +219,19 @@ For larger deployments, see the scalability section in [docs/ARCHITECTURE.md](do
 
 ## License
 
-[Your License Here]
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## Contributing
 
-[Contribution guidelines]
+Contributions are welcome! Please feel free to submit a Pull Request. For major changes, please open an issue first to discuss what you would like to change.
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
 ## Support
 
 - Documentation: [docs/](docs/)
-- Issues: [GitHub Issues](https://github.com/your-org/netsentinel/issues)
+- Issues: [GitHub Issues](https://github.com/noaRoblesLevy/NetSentinel/issues)
