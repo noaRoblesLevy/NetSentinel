@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Layout } from '@/components/layout/Layout'
+import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { Overview } from '@/pages/Overview'
 import { Alerts } from '@/pages/Alerts'
 import { AlertDetail } from '@/pages/AlertDetail'
@@ -10,6 +11,7 @@ import { DeviceProfile } from '@/pages/DeviceProfile'
 import { Rules } from '@/pages/Rules'
 import { Settings } from '@/pages/Settings'
 import { Login } from '@/pages/Login'
+import { NotFound } from '@/pages/NotFound'
 import { useAuth } from '@/hooks/useAuth'
 
 const queryClient = new QueryClient({
@@ -61,17 +63,19 @@ function AppRoutes() {
         <Route path="rules" element={<Rules />} />
         <Route path="settings" element={<Settings />} />
       </Route>
-      <Route path="*" element={<Navigate to="/" replace />} />
+      <Route path="*" element={<NotFound />} />
     </Routes>
   )
 }
 
 export default function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <AppRoutes />
-      </BrowserRouter>
-    </QueryClientProvider>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter>
+          <AppRoutes />
+        </BrowserRouter>
+      </QueryClientProvider>
+    </ErrorBoundary>
   )
 }
