@@ -31,6 +31,29 @@ import {
 } from '@/components/ui/select'
 import { useAuth } from '@/hooks/useAuth'
 import { useSite } from '@/hooks/useSite'
+import api, { UserWithDetails, CreateUserRequest, UpdateUserRequest } from '@/lib/api'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { Badge } from '@/components/ui/badge'
 
 export function Settings() {
   const { user } = useAuth()
@@ -714,5 +737,635 @@ ip flow-cache timeout inactive 15`}
         </CardContent>
       </Card>
     </div>
+  )
+}
+
+// User Management Components
+function UserManagement() {
+  const queryClient = useQueryClient()
+  const [createModalOpen, setCreateModalOpen] = useState(false)
+  const [editModalOpen, setEditModalOpen] = useState(false)
+  const [resetPasswordModalOpen, setResetPasswordModalOpen] = useState(false)
+  const [selectedUser, setSelectedUser] = useState<UserWithDetails | null>(null)
+  const [deleteConfirmUser, setDeleteConfirmUser] = useState<UserWithDetails | null>(null)
+
+  const { data: users, isLoading, error } = useQuery({
+    queryKey: ['users'],
+    queryFn: () => api.getUsers(),
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (userId: string) => api.deleteUser(userId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users'] })
+      setDeleteConfirmUser(null)
+    },
+  })
+
+  const toggleActiveMutation = useMutation({
+    mutationFn: ({ userId, isActive }: { userId: string; isActive: boolean }) =>
+      api.updateUser(userId, { is_active: isActive }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users'] })
+    },
+  })
+
+  const handleEdit = (user: UserWithDetails) => {
+    setSelectedUser(user)
+    setEditModalOpen(true)
+  }
+
+  const handleResetPassword = (user: UserWithDetails) => {
+    setSelectedUser(user)
+    setResetPasswordModalOpen(true)
+  }
+
+  const handleToggleActive = (user: UserWithDetails) => {
+    toggleActiveMutation.mutate({ userId: user.id, isActive: !user.is_active })
+  }
+
+  const formatDate = (dateStr?: string) => {
+    if (!dateStr) return 'Never'
+    return new Date(dateStr).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    })
+  }
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardContent className="py-8 text-center">
+          <Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" />
+          <p className="mt-2 text-muted-foreground">Loading users...</p>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (error) {
+    return (
+      <Card>
+        <CardContent className="py-8 text-center text-red-500">
+          Failed to load users. Please try again.
+        </CardContent>
+      </Card>
+    )
+  }
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle>User Management</CardTitle>
+          <Button onClick={() => setCreateModalOpen(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            Add User
+          </Button>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead>Email</TableHead>
+                <TableHead>Role</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Last Login</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {users?.map((user) => (
+                <TableRow key={user.id}>
+                  <TableCell className="font-medium">{user.full_name}</TableCell>
+                  <TableCell>{user.email}</TableCell>
+                  <TableCell>
+                    <Badge
+                      variant={
+                        user.role === 'admin'
+                          ? 'default'
+                          : user.role === 'analyst'
+                          ? 'secondary'
+                          : 'outline'
+                      }
+                    >
+                      {user.role}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={user.is_active ? 'default' : 'destructive'}>
+                      {user.is_active ? 'Active' : 'Inactive'}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>{formatDate(user.last_login_at)}</TableCell>
+                  <TableCell className="text-right">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="sm">
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => handleEdit(user)}>
+                          <Pencil className="h-4 w-4 mr-2" />
+                          Edit
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleResetPassword(user)}>
+                          <KeyRound className="h-4 w-4 mr-2" />
+                          Reset Password
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleToggleActive(user)}>
+                          {user.is_active ? (
+                            <>
+                              <EyeOff className="h-4 w-4 mr-2" />
+                              Deactivate
+                            </>
+                          ) : (
+                            <>
+                              <Eye className="h-4 w-4 mr-2" />
+                              Activate
+                            </>
+                          )}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="text-red-600"
+                          onClick={() => setDeleteConfirmUser(user)}
+                        >
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+
+          {users?.length === 0 && (
+            <div className="py-8 text-center text-muted-foreground">
+              No users found. Click "Add User" to create one.
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Create User Modal */}
+      <CreateUserModal
+        open={createModalOpen}
+        onClose={() => setCreateModalOpen(false)}
+        onSuccess={() => {
+          setCreateModalOpen(false)
+          queryClient.invalidateQueries({ queryKey: ['users'] })
+        }}
+      />
+
+      {/* Edit User Modal */}
+      <EditUserModal
+        open={editModalOpen}
+        user={selectedUser}
+        onClose={() => {
+          setEditModalOpen(false)
+          setSelectedUser(null)
+        }}
+        onSuccess={() => {
+          setEditModalOpen(false)
+          setSelectedUser(null)
+          queryClient.invalidateQueries({ queryKey: ['users'] })
+        }}
+      />
+
+      {/* Reset Password Modal */}
+      <ResetPasswordModal
+        open={resetPasswordModalOpen}
+        user={selectedUser}
+        onClose={() => {
+          setResetPasswordModalOpen(false)
+          setSelectedUser(null)
+        }}
+      />
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={!!deleteConfirmUser} onOpenChange={() => setDeleteConfirmUser(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete User</DialogTitle>
+          </DialogHeader>
+          <p className="text-muted-foreground">
+            Are you sure you want to delete <strong>{deleteConfirmUser?.full_name}</strong>?
+            This action cannot be undone.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteConfirmUser(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => deleteConfirmUser && deleteMutation.mutate(deleteConfirmUser.id)}
+              disabled={deleteMutation.isPending}
+            >
+              {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+
+function CreateUserModal({
+  open,
+  onClose,
+  onSuccess,
+}: {
+  open: boolean
+  onClose: () => void
+  onSuccess: () => void
+}) {
+  const [fullName, setFullName] = useState('')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [role, setRole] = useState<'viewer' | 'analyst' | 'admin'>('viewer')
+  const [error, setError] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+
+  const createMutation = useMutation({
+    mutationFn: (data: CreateUserRequest) => api.createUser(data),
+    onSuccess: () => {
+      onSuccess()
+      resetForm()
+    },
+    onError: (err: any) => {
+      setError(err.response?.data?.detail || 'Failed to create user')
+    },
+  })
+
+  const resetForm = () => {
+    setFullName('')
+    setEmail('')
+    setPassword('')
+    setRole('viewer')
+    setError('')
+  }
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    setError('')
+
+    if (!fullName || !email || !password) {
+      setError('All fields are required')
+      return
+    }
+
+    if (password.length < 8) {
+      setError('Password must be at least 8 characters')
+      return
+    }
+
+    createMutation.mutate({ full_name: fullName, email, password, role })
+  }
+
+  const handleClose = () => {
+    resetForm()
+    onClose()
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={handleClose}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Create New User</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {error && (
+            <div className="p-3 text-sm text-red-500 bg-red-50 dark:bg-red-950/50 rounded-lg">
+              {error}
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Full Name</label>
+            <Input
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              placeholder="John Doe"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Email</label>
+            <Input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="john@example.com"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Password</label>
+            <div className="flex gap-2">
+              <Input
+                type={showPassword ? 'text' : 'password'}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Minimum 8 characters"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowPassword(!showPassword)}
+              >
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </Button>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Role</label>
+            <Select value={role} onValueChange={(v) => setRole(v as typeof role)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="viewer">Viewer</SelectItem>
+                <SelectItem value="analyst">Analyst</SelectItem>
+                <SelectItem value="admin">Admin</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={handleClose}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={createMutation.isPending}>
+              {createMutation.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Creating...
+                </>
+              ) : (
+                'Create User'
+              )}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function EditUserModal({
+  open,
+  user,
+  onClose,
+  onSuccess,
+}: {
+  open: boolean
+  user: UserWithDetails | null
+  onClose: () => void
+  onSuccess: () => void
+}) {
+  const [fullName, setFullName] = useState('')
+  const [email, setEmail] = useState('')
+  const [role, setRole] = useState<'viewer' | 'analyst' | 'admin'>('viewer')
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (user) {
+      setFullName(user.full_name)
+      setEmail(user.email)
+      setRole(user.role)
+    }
+  }, [user])
+
+  const updateMutation = useMutation({
+    mutationFn: (data: UpdateUserRequest) => api.updateUser(user!.id, data),
+    onSuccess: () => {
+      onSuccess()
+    },
+    onError: (err: any) => {
+      setError(err.response?.data?.detail || 'Failed to update user')
+    },
+  })
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    setError('')
+
+    if (!fullName || !email) {
+      setError('Name and email are required')
+      return
+    }
+
+    updateMutation.mutate({ full_name: fullName, email, role })
+  }
+
+  const handleClose = () => {
+    setError('')
+    onClose()
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={handleClose}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Edit User</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {error && (
+            <div className="p-3 text-sm text-red-500 bg-red-50 dark:bg-red-950/50 rounded-lg">
+              {error}
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Full Name</label>
+            <Input
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              placeholder="John Doe"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Email</label>
+            <Input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="john@example.com"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Role</label>
+            <Select value={role} onValueChange={(v) => setRole(v as typeof role)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="viewer">Viewer</SelectItem>
+                <SelectItem value="analyst">Analyst</SelectItem>
+                <SelectItem value="admin">Admin</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={handleClose}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={updateMutation.isPending}>
+              {updateMutation.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                'Save Changes'
+              )}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function ResetPasswordModal({
+  open,
+  user,
+  onClose,
+}: {
+  open: boolean
+  user: UserWithDetails | null
+  onClose: () => void
+}) {
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+  const [error, setError] = useState('')
+  const [success, setSuccess] = useState(false)
+
+  const resetMutation = useMutation({
+    mutationFn: (password: string) => api.adminResetPassword(user!.id, password),
+    onSuccess: () => {
+      setSuccess(true)
+      setNewPassword('')
+      setConfirmPassword('')
+      setTimeout(() => {
+        onClose()
+        setSuccess(false)
+      }, 2000)
+    },
+    onError: (err: any) => {
+      setError(err.response?.data?.detail || 'Failed to reset password')
+    },
+  })
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    setError('')
+
+    if (!newPassword || !confirmPassword) {
+      setError('Both fields are required')
+      return
+    }
+
+    if (newPassword.length < 8) {
+      setError('Password must be at least 8 characters')
+      return
+    }
+
+    if (newPassword !== confirmPassword) {
+      setError('Passwords do not match')
+      return
+    }
+
+    resetMutation.mutate(newPassword)
+  }
+
+  const handleClose = () => {
+    setNewPassword('')
+    setConfirmPassword('')
+    setError('')
+    setSuccess(false)
+    onClose()
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={handleClose}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Reset Password</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Set a new password for <strong>{user?.full_name}</strong>
+          </p>
+
+          {error && (
+            <div className="p-3 text-sm text-red-500 bg-red-50 dark:bg-red-950/50 rounded-lg">
+              {error}
+            </div>
+          )}
+
+          {success && (
+            <div className="p-3 text-sm text-green-600 bg-green-50 dark:bg-green-950/50 rounded-lg">
+              Password reset successfully!
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">New Password</label>
+            <div className="flex gap-2">
+              <Input
+                type={showPassword ? 'text' : 'password'}
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="Minimum 8 characters"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowPassword(!showPassword)}
+              >
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </Button>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Confirm Password</label>
+            <Input
+              type={showPassword ? 'text' : 'password'}
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              placeholder="Confirm password"
+            />
+          </div>
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={handleClose}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={resetMutation.isPending || success}>
+              {resetMutation.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Resetting...
+                </>
+              ) : (
+                'Reset Password'
+              )}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   )
 }
