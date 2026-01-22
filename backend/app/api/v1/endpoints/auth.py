@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 import bcrypt
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Response, Cookie
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from pydantic import BaseModel, Field
@@ -32,7 +32,43 @@ ALGORITHM = settings.algorithm
 ACCESS_TOKEN_EXPIRE_MINUTES = settings.access_token_expire_minutes
 REFRESH_TOKEN_EXPIRE_DAYS = 7
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
+# Cookie settings
+COOKIE_NAME = "access_token"
+REFRESH_COOKIE_NAME = "refresh_token"
+COOKIE_SECURE = settings.environment == "production"  # Only send over HTTPS in production
+COOKIE_SAMESITE = "lax"  # Protect against CSRF while allowing normal navigation
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
+
+
+def get_token_from_cookie_or_header(
+    request: Request,
+    token_from_header: Optional[str] = Depends(oauth2_scheme),
+    access_token: Optional[str] = Cookie(None, alias=COOKIE_NAME),
+) -> str:
+    """
+    Extract JWT token from either Authorization header or httpOnly cookie.
+
+    Priority:
+    1. Authorization header (Bearer token) - for API clients
+    2. httpOnly cookie - for browser-based clients
+
+    This allows both traditional API clients and browser-based apps to authenticate.
+    """
+    # Try header first (API clients)
+    if token_from_header:
+        return token_from_header
+
+    # Fall back to cookie (browser clients)
+    if access_token:
+        return access_token
+
+    # No token found
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Not authenticated",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
 
 
 class Token(BaseModel):
@@ -132,7 +168,8 @@ def decode_token(token: str, expected_type: str = "access") -> dict:
 
 
 def get_current_user(
-    token: str = Depends(oauth2_scheme),
+    request: Request,
+    token: str = Depends(get_token_from_cookie_or_header),
     db: Session = Depends(get_db)
 ) -> User:
     """Get the current authenticated user from JWT token."""
@@ -204,6 +241,7 @@ require_viewer = require_role(["admin", "analyst", "viewer"])
 
 @router.post("/login", response_model=AuthResponse)
 def login(
+    response: Response,
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db)
 ):
@@ -212,6 +250,8 @@ def login(
 
     The access token expires in 60 minutes and should be used for API calls.
     The refresh token expires in 7 days and can be used to get new tokens.
+
+    Tokens are also set as httpOnly cookies for browser-based clients.
     """
     # Find user by email
     user = db.query(User).filter(User.email == form_data.username).first()
@@ -244,6 +284,26 @@ def login(
     access_token = create_access_token(data=token_data)
     refresh_token = create_refresh_token(data=token_data)
 
+    # Set httpOnly cookies for browser clients
+    response.set_cookie(
+        key=COOKIE_NAME,
+        value=access_token,
+        httponly=True,
+        secure=COOKIE_SECURE,
+        samesite=COOKIE_SAMESITE,
+        max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        path="/",
+    )
+    response.set_cookie(
+        key=REFRESH_COOKIE_NAME,
+        value=refresh_token,
+        httponly=True,
+        secure=COOKIE_SECURE,
+        samesite=COOKIE_SAMESITE,
+        max_age=REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
+        path="/api/v1/auth",  # Only send refresh token to auth endpoints
+    )
+
     # Update last login
     try:
         db.execute(
@@ -272,12 +332,17 @@ def login(
 
 
 @router.post("/refresh", response_model=Token)
-def refresh_token(
-    request: RefreshTokenRequest,
+def refresh_tokens(
+    response: Response,
+    body: Optional[RefreshTokenRequest] = None,
+    refresh_token_cookie: Optional[str] = Cookie(None, alias=REFRESH_COOKIE_NAME),
     db: Session = Depends(get_db)
 ):
     """
     Get new access and refresh tokens using a valid refresh token.
+
+    The refresh token can be provided in the request body (for API clients)
+    or via httpOnly cookie (for browser clients).
 
     Use this when the access token has expired but you still have a valid refresh token.
     """
@@ -287,8 +352,13 @@ def refresh_token(
         headers={"WWW-Authenticate": "Bearer"},
     )
 
+    # Get refresh token from body or cookie
+    refresh_token = (body.refresh_token if body else None) or refresh_token_cookie
+    if not refresh_token:
+        raise credentials_exception
+
     # Check if refresh token is blacklisted
-    if is_token_blacklisted(request.refresh_token):
+    if is_token_blacklisted(refresh_token):
         logger.warning("Attempted use of blacklisted refresh token")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -297,7 +367,7 @@ def refresh_token(
         )
 
     try:
-        payload = decode_token(request.refresh_token, expected_type="refresh")
+        payload = decode_token(refresh_token, expected_type="refresh")
         email: str = payload.get("sub")
         if email is None:
             raise credentials_exception
@@ -319,12 +389,32 @@ def refresh_token(
         raise credentials_exception
 
     # Blacklist the old refresh token (rotation)
-    blacklist_token(request.refresh_token)
+    blacklist_token(refresh_token)
 
     # Create new tokens
     token_data = {"sub": user.email, "role": user.role}
     new_access_token = create_access_token(data=token_data)
     new_refresh_token = create_refresh_token(data=token_data)
+
+    # Set new cookies for browser clients
+    response.set_cookie(
+        key=COOKIE_NAME,
+        value=new_access_token,
+        httponly=True,
+        secure=COOKIE_SECURE,
+        samesite=COOKIE_SAMESITE,
+        max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        path="/",
+    )
+    response.set_cookie(
+        key=REFRESH_COOKIE_NAME,
+        value=new_refresh_token,
+        httponly=True,
+        secure=COOKIE_SECURE,
+        samesite=COOKIE_SAMESITE,
+        max_age=REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
+        path="/api/v1/auth",
+    )
 
     logger.info(f"Tokens refreshed for user: {user.email}")
 
@@ -355,24 +445,34 @@ class LogoutRequest(BaseModel):
 
 @router.post("/logout")
 def logout(
-    request: Optional[LogoutRequest] = None,
-    token: str = Depends(oauth2_scheme),
+    response: Response,
+    http_request: Request,
+    body: Optional[LogoutRequest] = None,
+    token: str = Depends(get_token_from_cookie_or_header),
+    refresh_token_cookie: Optional[str] = Cookie(None, alias=REFRESH_COOKIE_NAME),
     current_user: User = Depends(get_current_user)
 ):
     """
-    Logout endpoint - invalidates the current access token and optionally the refresh token.
+    Logout endpoint - invalidates the current access token and refresh token.
 
-    The access token is automatically blacklisted. If a refresh token is provided,
-    it will also be blacklisted to prevent it from being used to get new tokens.
+    The access token is automatically blacklisted. The refresh token from either
+    the request body or cookie will also be blacklisted.
+
+    Also clears httpOnly cookies for browser clients.
     """
     # Blacklist the access token
     if not blacklist_token(token):
         logger.warning(f"Failed to blacklist access token for user: {current_user.email}")
 
-    # Blacklist the refresh token if provided
-    if request and request.refresh_token:
-        if not blacklist_token(request.refresh_token):
+    # Blacklist the refresh token from body or cookie
+    refresh_token = (body.refresh_token if body else None) or refresh_token_cookie
+    if refresh_token:
+        if not blacklist_token(refresh_token):
             logger.warning(f"Failed to blacklist refresh token for user: {current_user.email}")
+
+    # Clear cookies for browser clients
+    response.delete_cookie(key=COOKIE_NAME, path="/")
+    response.delete_cookie(key=REFRESH_COOKIE_NAME, path="/api/v1/auth")
 
     logger.info(f"User logged out: {current_user.email}")
     return {"message": "Successfully logged out", "email": current_user.email}

@@ -14,10 +14,10 @@ interface AuthState {
 
 export const useAuth = create<AuthState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       user: null,
-      isAuthenticated: api.isAuthenticated(),
-      isLoading: false,
+      isAuthenticated: false,  // Will be verified on checkAuth
+      isLoading: true,  // Start with loading since we need to verify session
 
       login: async (email: string, password: string) => {
         set({ isLoading: true })
@@ -46,20 +46,19 @@ export const useAuth = create<AuthState>()(
       },
 
       checkAuth: async () => {
-        if (!api.isAuthenticated()) {
-          set({ user: null, isAuthenticated: false })
-          return
-        }
-
+        // Always try to verify session via API call
+        // The httpOnly cookie will be sent automatically
         set({ isLoading: true })
         try {
           const user = await api.getCurrentUser()
+          api.setAuthenticated(true)
           set({
             user,
             isAuthenticated: true,
             isLoading: false,
           })
         } catch {
+          api.setAuthenticated(false)
           set({
             user: null,
             isAuthenticated: false,

@@ -19,7 +19,7 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || '/api/v1'
 
 class ApiClient {
   private client: AxiosInstance
-  private token: string | null = null
+  private _isAuthenticated: boolean = false
 
   constructor() {
     this.client = axios.create({
@@ -27,41 +27,45 @@ class ApiClient {
       headers: {
         'Content-Type': 'application/json',
       },
+      // Enable sending cookies with requests (httpOnly cookie auth)
+      withCredentials: true,
     })
 
-    // Load token from localStorage
-    this.token = localStorage.getItem('auth_token')
-    if (this.token) {
-      this.setAuthToken(this.token)
-    }
+    // Check if we have a session by calling /auth/me
+    // This is done asynchronously on first load
+    this.checkAuth()
 
     // Response interceptor for error handling
     this.client.interceptors.response.use(
       (response) => response,
       (error: AxiosError) => {
         if (error.response?.status === 401) {
-          this.clearAuth()
-          window.location.href = '/login'
+          this._isAuthenticated = false
+          // Don't redirect if we're already on login page
+          if (!window.location.pathname.includes('/login')) {
+            window.location.href = '/login'
+          }
         }
         return Promise.reject(error)
       }
     )
   }
 
-  setAuthToken(token: string) {
-    this.token = token
-    this.client.defaults.headers.common['Authorization'] = `Bearer ${token}`
-    localStorage.setItem('auth_token', token)
+  private async checkAuth(): Promise<void> {
+    try {
+      await this.client.get('/auth/me')
+      this._isAuthenticated = true
+    } catch {
+      this._isAuthenticated = false
+    }
   }
 
-  clearAuth() {
-    this.token = null
-    delete this.client.defaults.headers.common['Authorization']
-    localStorage.removeItem('auth_token')
+  setAuthenticated(value: boolean) {
+    this._isAuthenticated = value
   }
 
   isAuthenticated(): boolean {
-    return !!this.token
+    return this._isAuthenticated
   }
 
   // Auth endpoints
@@ -74,7 +78,8 @@ class ApiClient {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     })
 
-    this.setAuthToken(response.data.access_token)
+    // Mark as authenticated (cookies are set automatically by the server)
+    this._isAuthenticated = true
     return response.data
   }
 
@@ -82,7 +87,19 @@ class ApiClient {
     try {
       await this.client.post('/auth/logout')
     } finally {
-      this.clearAuth()
+      // Cookies are cleared by the server
+      this._isAuthenticated = false
+    }
+  }
+
+  async refreshTokens(): Promise<void> {
+    try {
+      // The refresh token is sent via httpOnly cookie automatically
+      await this.client.post('/auth/refresh')
+      this._isAuthenticated = true
+    } catch {
+      this._isAuthenticated = false
+      throw new Error('Session expired')
     }
   }
 
