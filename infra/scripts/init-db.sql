@@ -587,8 +587,10 @@ SELECT add_continuous_aggregate_policy('traffic_hourly',
 -- DEFAULT DATA
 -- ============================================================================
 
--- Insert default admin user (password: 'changeme' - MUST be changed)
--- Password hash for 'changeme' using bcrypt
-INSERT INTO users (email, hashed_password, full_name, role)
-VALUES ('admin@netsentinel.local', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4.VTtYNLlYRFKHHi', 'System Admin', 'admin')
-ON CONFLICT (email) DO NOTHING;
+-- SECURITY NOTE: No default admin user is created.
+-- The first admin user must be created using one of these methods:
+--   1. Run: python -m app.cli create-admin --email admin@example.com
+--   2. Use the first-run setup wizard in the web UI
+--   3. For development only, set NETSENTINEL_CREATE_DEV_ADMIN=true
+--
+-- This prevents default credentials from being deployed to production.
