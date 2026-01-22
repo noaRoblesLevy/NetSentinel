@@ -393,6 +393,38 @@ class ApiClient {
     const response = await this.client.get<SiteStatus>(`/status/site/${siteId}`)
     return response.data
   }
+
+  // User Management (Admin only)
+  async getUsers(): Promise<UserWithDetails[]> {
+    const response = await this.client.get<UserWithDetails[]>('/users')
+    return response.data
+  }
+
+  async getUser(userId: string): Promise<UserWithDetails> {
+    const response = await this.client.get<UserWithDetails>(`/users/${userId}`)
+    return response.data
+  }
+
+  async createUser(user: CreateUserRequest): Promise<UserWithDetails> {
+    const response = await this.client.post<UserWithDetails>('/users', user)
+    return response.data
+  }
+
+  async updateUser(userId: string, data: UpdateUserRequest): Promise<UserWithDetails> {
+    const response = await this.client.patch<UserWithDetails>(`/users/${userId}`, data)
+    return response.data
+  }
+
+  async deleteUser(userId: string): Promise<void> {
+    await this.client.delete(`/users/${userId}`)
+  }
+
+  async adminResetPassword(userId: string, newPassword: string): Promise<{ message: string }> {
+    const response = await this.client.post<{ message: string }>(`/users/${userId}/reset-password`, {
+      new_password: newPassword,
+    })
+    return response.data
+  }
 }
 
 // Site Status Types
@@ -428,6 +460,31 @@ export interface SiteStatus {
   last_check: string
   error_message: string | null
   warnings: string[]
+}
+
+// User Management Types
+export interface UserWithDetails {
+  id: string
+  email: string
+  full_name: string
+  role: 'admin' | 'analyst' | 'viewer'
+  is_active: boolean
+  created_at: string
+  last_login_at?: string
+}
+
+export interface CreateUserRequest {
+  email: string
+  password: string
+  full_name: string
+  role: 'admin' | 'analyst' | 'viewer'
+}
+
+export interface UpdateUserRequest {
+  email?: string
+  full_name?: string
+  role?: 'admin' | 'analyst' | 'viewer'
+  is_active?: boolean
 }
 
 export const api = new ApiClient()

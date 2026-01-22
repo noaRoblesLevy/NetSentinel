@@ -10,6 +10,13 @@ import {
   Save,
   Eye,
   EyeOff,
+  Users,
+  Plus,
+  Pencil,
+  Trash2,
+  Loader2,
+  MoreHorizontal,
+  KeyRound,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -56,6 +63,12 @@ export function Settings() {
             <Key className="h-4 w-4" />
             API Keys
           </TabsTrigger>
+          {user?.role === 'admin' && (
+            <TabsTrigger value="users" className="flex items-center gap-2">
+              <Users className="h-4 w-4" />
+              Users
+            </TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="profile">
@@ -73,6 +86,12 @@ export function Settings() {
         <TabsContent value="api">
           <ApiKeySettings siteId={selectedSiteId} />
         </TabsContent>
+
+        {user?.role === 'admin' && (
+          <TabsContent value="users">
+            <UserManagement />
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   )
