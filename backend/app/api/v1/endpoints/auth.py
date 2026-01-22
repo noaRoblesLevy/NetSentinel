@@ -15,6 +15,11 @@ from sqlalchemy import text
 from app.database import get_db
 from app.config import get_settings
 from app.models import User
+from app.services.token_blacklist import (
+    blacklist_token,
+    is_token_blacklisted,
+    is_user_token_invalidated,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -136,11 +141,34 @@ def get_current_user(
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
+
+    # Check if token is blacklisted
+    if is_token_blacklisted(token):
+        logger.warning("Attempted use of blacklisted token")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has been revoked",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     try:
         payload = decode_token(token, expected_type="access")
         email: str = payload.get("sub")
         if email is None:
             raise credentials_exception
+
+        # Check if user's tokens were invalidated (e.g., password change)
+        iat = payload.get("iat")
+        if iat:
+            token_issued_at = datetime.utcfromtimestamp(iat)
+            if is_user_token_invalidated(email, token_issued_at):
+                logger.warning(f"Token invalidated for user: {email}")
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Session expired, please login again",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+
     except JWTError:
         raise credentials_exception
 
@@ -259,11 +287,29 @@ def refresh_token(
         headers={"WWW-Authenticate": "Bearer"},
     )
 
+    # Check if refresh token is blacklisted
+    if is_token_blacklisted(request.refresh_token):
+        logger.warning("Attempted use of blacklisted refresh token")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh token has been revoked",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     try:
         payload = decode_token(request.refresh_token, expected_type="refresh")
         email: str = payload.get("sub")
         if email is None:
             raise credentials_exception
+
+        # Check if user's tokens were invalidated
+        iat = payload.get("iat")
+        if iat:
+            token_issued_at = datetime.utcfromtimestamp(iat)
+            if is_user_token_invalidated(email, token_issued_at):
+                logger.warning(f"Refresh token invalidated for user: {email}")
+                raise credentials_exception
+
     except JWTError:
         raise credentials_exception
 
@@ -271,6 +317,9 @@ def refresh_token(
     user = db.query(User).filter(User.email == email).first()
     if user is None or not user.is_active:
         raise credentials_exception
+
+    # Blacklist the old refresh token (rotation)
+    blacklist_token(request.refresh_token)
 
     # Create new tokens
     token_data = {"sub": user.email, "role": user.role}
@@ -299,13 +348,31 @@ def get_me(current_user: User = Depends(get_current_user)):
     )
 
 
-@router.post("/logout")
-def logout(current_user: User = Depends(get_current_user)):
-    """
-    Logout endpoint.
+class LogoutRequest(BaseModel):
+    """Request model for logout with optional refresh token."""
+    refresh_token: Optional[str] = None
 
-    Note: Since JWTs are stateless, the client should discard the tokens.
-    For additional security, consider implementing a token blacklist.
+
+@router.post("/logout")
+def logout(
+    request: Optional[LogoutRequest] = None,
+    token: str = Depends(oauth2_scheme),
+    current_user: User = Depends(get_current_user)
+):
     """
+    Logout endpoint - invalidates the current access token and optionally the refresh token.
+
+    The access token is automatically blacklisted. If a refresh token is provided,
+    it will also be blacklisted to prevent it from being used to get new tokens.
+    """
+    # Blacklist the access token
+    if not blacklist_token(token):
+        logger.warning(f"Failed to blacklist access token for user: {current_user.email}")
+
+    # Blacklist the refresh token if provided
+    if request and request.refresh_token:
+        if not blacklist_token(request.refresh_token):
+            logger.warning(f"Failed to blacklist refresh token for user: {current_user.email}")
+
     logger.info(f"User logged out: {current_user.email}")
     return {"message": "Successfully logged out", "email": current_user.email}
