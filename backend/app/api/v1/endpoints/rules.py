@@ -117,7 +117,7 @@ def get_rules(
         return rules
     except Exception as e:
         logger.error(f"Failed to get rules: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to retrieve rules")
 
 
 @router.get("/{rule_id}", response_model=RuleResponse)
@@ -158,7 +158,7 @@ def get_rule(
         raise
     except Exception as e:
         logger.error(f"Failed to get rule: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to retrieve rule details")
 
 
 @router.post("", response_model=RuleResponse, status_code=status.HTTP_201_CREATED)
@@ -199,7 +199,7 @@ def create_rule(
     except Exception as e:
         logger.error(f"Failed to create rule: {e}")
         db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to create rule")
 
 
 @router.patch("/{rule_id}", response_model=RuleResponse)
@@ -250,7 +250,7 @@ def update_rule(
     except Exception as e:
         logger.error(f"Failed to update rule: {e}")
         db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to update rule")
 
 
 @router.delete("/{rule_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -276,4 +276,4 @@ def delete_rule(
     except Exception as e:
         logger.error(f"Failed to delete rule: {e}")
         db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to delete rule")

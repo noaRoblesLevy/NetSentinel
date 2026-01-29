@@ -162,7 +162,7 @@ async def list_alerts(
         logger.error(f"Failed to list alerts: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Failed to retrieve alerts"
         )
 
 
@@ -195,7 +195,7 @@ def get_alerts_by_severity(
         }
     except Exception as e:
         logger.error(f"Failed to get alerts by severity: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to retrieve alert severity data")
 
 
 @router.get("/{alert_id}", response_model=AlertResponse)
@@ -246,7 +246,7 @@ def get_alert(
         logger.error(f"Failed to get alert: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Failed to retrieve alert details"
         )
 
 
@@ -288,5 +288,5 @@ async def update_alert(
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Failed to update alert"
         )

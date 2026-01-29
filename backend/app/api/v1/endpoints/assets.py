@@ -121,7 +121,7 @@ async def list_assets(
         logger.error(f"Failed to list assets: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Failed to retrieve assets"
         )
 
 
@@ -169,7 +169,7 @@ async def get_asset(
         logger.error(f"Failed to get asset: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Failed to retrieve asset details"
         )
 
 
@@ -220,5 +220,5 @@ async def update_asset(
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Failed to update asset"
         )

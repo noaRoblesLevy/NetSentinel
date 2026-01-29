@@ -69,7 +69,7 @@ def get_dashboard_stats(
         }
     except Exception as e:
         logger.error(f"Failed to get dashboard stats: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to retrieve dashboard statistics")
 
 
 @router.get("/flows/timeseries")
@@ -93,11 +93,11 @@ def get_flow_timeseries(
                     COALESCE(SUM(bytes) FILTER (WHERE dst_ip << '192.168.0.0/16'::inet OR dst_ip << '10.0.0.0/8'::inet OR dst_ip << '172.16.0.0/12'::inet), 0) as bytes_in
                 FROM flows_raw
                 WHERE site_id = :site_id
-                AND ts_start > NOW() - INTERVAL ':hours hours'
+                AND ts_start > NOW() - make_interval(hours => :hours)
                 GROUP BY hour
                 ORDER BY hour ASC
-            """.replace(":hours", str(hours))),
-            {"site_id": site_id}
+            """),
+            {"site_id": site_id, "hours": hours}
         )
 
         data = []
@@ -126,7 +126,7 @@ def get_flow_timeseries(
         return data
     except Exception as e:
         logger.error(f"Failed to get flow timeseries: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to retrieve flow timeseries data")
 
 
 @router.get("/anomalies/timeseries")
@@ -148,11 +148,11 @@ def get_anomaly_timeseries(
                     COUNT(*) FILTER (WHERE severity = 'high') as high_count
                 FROM alerts
                 WHERE site_id = :site_id
-                AND created_at > NOW() - INTERVAL ':hours hours'
+                AND created_at > NOW() - make_interval(hours => :hours)
                 GROUP BY hour
                 ORDER BY hour ASC
-            """.replace(":hours", str(hours))),
-            {"site_id": site_id}
+            """),
+            {"site_id": site_id, "hours": hours}
         )
 
         # Build a map of hours to scores
@@ -176,7 +176,7 @@ def get_anomaly_timeseries(
         return data
     except Exception as e:
         logger.error(f"Failed to get anomaly timeseries: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to retrieve anomaly timeseries data")
 
 
 @router.get("/overview")
@@ -262,7 +262,7 @@ async def get_dashboard_overview(
         logger.error(f"Failed to get dashboard overview: {e}")
         raise HTTPException(
             status_code=500,
-            detail=str(e)
+            detail="Failed to retrieve dashboard overview"
         )
 
 
@@ -286,11 +286,11 @@ async def get_traffic_chart(
                     COUNT(DISTINCT dst_ip) as unique_dst_ips
                 FROM flows_raw
                 WHERE site_id = :site_id
-                AND ts_start > NOW() - INTERVAL ':hours hours'
+                AND ts_start > NOW() - make_interval(hours => :hours)
                 GROUP BY hour
                 ORDER BY hour DESC
-            """.replace(":hours", str(hours))),
-            {"site_id": site_id}
+            """),
+            {"site_id": site_id, "hours": hours}
         )
 
         data = []
@@ -314,5 +314,5 @@ async def get_traffic_chart(
         logger.error(f"Failed to get traffic chart: {e}")
         raise HTTPException(
             status_code=500,
-            detail=str(e)
+            detail="Failed to retrieve traffic chart data"
         )
