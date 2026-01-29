@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import User
-from app.api.v1.endpoints.auth import get_current_user, require_admin, hash_password
+from app.api.v1.endpoints.auth import get_current_user, require_admin, hash_password, validate_password_complexity
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -115,11 +115,12 @@ def create_user(
             detail=f"Invalid role. Must be one of: {', '.join(valid_roles)}"
         )
 
-    # Validate password
-    if len(user_data.password) < 8:
+    # Validate password complexity
+    is_valid, error_msg = validate_password_complexity(user_data.password)
+    if not is_valid:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Password must be at least 8 characters long"
+            detail=error_msg
         )
 
     # Create user
@@ -281,11 +282,12 @@ def admin_reset_password(
             detail="User not found"
         )
 
-    # Validate new password
-    if len(data.new_password) < 8:
+    # Validate password complexity
+    is_valid, error_msg = validate_password_complexity(data.new_password)
+    if not is_valid:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Password must be at least 8 characters long"
+            detail=error_msg
         )
 
     # Hash and save new password

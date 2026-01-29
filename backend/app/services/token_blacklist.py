@@ -125,8 +125,8 @@ def is_token_blacklisted(token: str) -> bool:
     """
     Check if a token is blacklisted.
 
-    Returns True if the token is blacklisted, False otherwise.
-    In case of Redis errors, returns False (fail-open for availability).
+    Returns True if the token is blacklisted or if Redis is unavailable.
+    Fails closed for security - if we can't verify, we reject.
     """
     try:
         jti = _get_token_jti(token)
@@ -140,12 +140,12 @@ def is_token_blacklisted(token: str) -> bool:
 
     except redis.RedisError as e:
         logger.error(f"Redis error while checking blacklist: {e}")
-        # Fail-open: if Redis is down, don't block all requests
-        # This is a security trade-off for availability
-        return False
+        # Fail-closed: if Redis is down, treat all tokens as potentially revoked
+        # Security takes priority over availability for token validation
+        return True
     except Exception as e:
         logger.error(f"Unexpected error while checking blacklist: {e}")
-        return False
+        return True
 
 
 def blacklist_user_tokens(user_email: str, issued_before: Optional[datetime] = None) -> bool:
@@ -181,6 +181,7 @@ def blacklist_user_tokens(user_email: str, issued_before: Optional[datetime] = N
 def is_user_token_invalidated(user_email: str, token_issued_at: datetime) -> bool:
     """
     Check if a user's tokens issued before a certain time are invalidated.
+    Fails closed for security - if Redis is unavailable, treat tokens as invalid.
     """
     try:
         client = get_redis_client()
@@ -195,7 +196,8 @@ def is_user_token_invalidated(user_email: str, token_issued_at: datetime) -> boo
 
     except redis.RedisError as e:
         logger.error(f"Redis error while checking user invalidation: {e}")
-        return False
+        # Fail-closed: if Redis is down, require re-authentication
+        return True
     except Exception as e:
         logger.error(f"Unexpected error while checking user invalidation: {e}")
-        return False
+        return True

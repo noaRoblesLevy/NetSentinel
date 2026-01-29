@@ -127,6 +127,40 @@ def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
 
+def validate_password_complexity(password: str) -> tuple[bool, str]:
+    """
+    Validate password meets complexity requirements.
+
+    Requirements:
+    - At least 8 characters
+    - At least one uppercase letter
+    - At least one lowercase letter
+    - At least one digit
+    - At least one special character
+
+    Returns:
+        Tuple of (is_valid, error_message)
+    """
+    import re
+
+    if len(password) < 8:
+        return False, "Password must be at least 8 characters long"
+
+    if not re.search(r'[A-Z]', password):
+        return False, "Password must contain at least one uppercase letter"
+
+    if not re.search(r'[a-z]', password):
+        return False, "Password must contain at least one lowercase letter"
+
+    if not re.search(r'\d', password):
+        return False, "Password must contain at least one digit"
+
+    if not re.search(r'[!@#$%^&*(),.?":{}|<>_\-+=\[\]\\;\'`~]', password):
+        return False, "Password must contain at least one special character (!@#$%^&*etc.)"
+
+    return True, ""
+
+
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     """Create a JWT access token."""
     to_encode = data.copy()
@@ -549,11 +583,12 @@ def change_password(
             detail="Current password is incorrect"
         )
 
-    # Validate new password
-    if len(request.new_password) < 8:
+    # Validate new password complexity
+    is_valid, error_msg = validate_password_complexity(request.new_password)
+    if not is_valid:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="New password must be at least 8 characters long"
+            detail=error_msg
         )
 
     # Hash and save new password
@@ -685,11 +720,12 @@ def reset_password(
             detail="Invalid reset token"
         )
 
-    # Validate new password
-    if len(request.new_password) < 8:
+    # Validate new password complexity
+    is_valid, error_msg = validate_password_complexity(request.new_password)
+    if not is_valid:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Password must be at least 8 characters long"
+            detail=error_msg
         )
 
     # Hash and save new password
