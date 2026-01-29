@@ -3,6 +3,7 @@
 import logging
 from datetime import datetime
 from typing import List, Optional
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
@@ -52,10 +53,10 @@ class AlertUpdate(BaseModel):
 
 @router.get("", response_model=AlertListResponse)
 async def list_alerts(
-    site_id: str,
+    site_id: UUID,
     status_filter: Optional[str] = Query(None, alias="status"),
     severity: Optional[str] = None,
-    asset_id: Optional[str] = None,
+    asset_id: Optional[UUID] = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
@@ -65,7 +66,7 @@ async def list_alerts(
     try:
         # Build query
         where_clauses = ["site_id = :site_id"]
-        params = {"site_id": site_id}
+        params = {"site_id": str(site_id)}
 
         if status_filter:
             where_clauses.append("status = :status")
@@ -77,7 +78,7 @@ async def list_alerts(
 
         if asset_id:
             where_clauses.append("asset_id = :asset_id")
-            params["asset_id"] = asset_id
+            params["asset_id"] = str(asset_id)
 
         where_sql = " AND ".join(where_clauses)
 
@@ -103,7 +104,7 @@ async def list_alerts(
                 FROM alerts
                 WHERE site_id = :site_id
             """),
-            {"site_id": site_id}
+            {"site_id": str(site_id)}
         )
         summary_row = summary_result.fetchone()
 
@@ -168,7 +169,7 @@ async def list_alerts(
 
 @router.get("/by-severity")
 def get_alerts_by_severity(
-    site_id: str,
+    site_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_viewer)
 ):
@@ -184,7 +185,7 @@ def get_alerts_by_severity(
                 FROM alerts
                 WHERE site_id = :site_id
             """),
-            {"site_id": site_id}
+            {"site_id": str(site_id)}
         )
         row = result.fetchone()
         return {
@@ -200,7 +201,7 @@ def get_alerts_by_severity(
 
 @router.get("/{alert_id}", response_model=AlertResponse)
 def get_alert(
-    alert_id: str,
+    alert_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_viewer)
 ):
@@ -214,7 +215,7 @@ def get_alert(
                 FROM alerts
                 WHERE id = :alert_id
             """),
-            {"alert_id": alert_id}
+            {"alert_id": str(alert_id)}
         )
         row = result.fetchone()
 
@@ -252,7 +253,7 @@ def get_alert(
 
 @router.patch("/{alert_id}", response_model=AlertResponse)
 async def update_alert(
-    alert_id: str,
+    alert_id: UUID,
     update: AlertUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_analyst)
@@ -260,7 +261,7 @@ async def update_alert(
     """Update alert status."""
     try:
         updates = []
-        params = {"alert_id": alert_id}
+        params = {"alert_id": str(alert_id)}
 
         if update.status is not None:
             updates.append("status = :status")

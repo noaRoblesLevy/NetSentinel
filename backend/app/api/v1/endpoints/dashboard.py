@@ -2,6 +2,7 @@
 
 import logging
 from datetime import datetime, timedelta
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text
@@ -17,7 +18,7 @@ router = APIRouter()
 
 @router.get("/stats")
 def get_dashboard_stats(
-    site_id: str,
+    site_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_viewer)
 ):
@@ -33,14 +34,14 @@ def get_dashboard_stats(
                 FROM alerts
                 WHERE site_id = :site_id
             """),
-            {"site_id": site_id}
+            {"site_id": str(site_id)}
         )
         alert_row = alert_result.fetchone()
 
         # Get asset count
         asset_result = db.execute(
             text("SELECT COUNT(*) as total FROM assets WHERE site_id = :site_id"),
-            {"site_id": site_id}
+            {"site_id": str(site_id)}
         )
         asset_row = asset_result.fetchone()
 
@@ -54,7 +55,7 @@ def get_dashboard_stats(
                 WHERE site_id = :site_id
                 AND ts_start > NOW() - INTERVAL '24 hours'
             """),
-            {"site_id": site_id}
+            {"site_id": str(site_id)}
         )
         flow_row = flow_result.fetchone()
 
@@ -74,7 +75,7 @@ def get_dashboard_stats(
 
 @router.get("/flows/timeseries")
 def get_flow_timeseries(
-    site_id: str,
+    site_id: UUID,
     hours: int = 24,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_viewer)
@@ -97,7 +98,7 @@ def get_flow_timeseries(
                 GROUP BY hour
                 ORDER BY hour ASC
             """),
-            {"site_id": site_id, "hours": hours}
+            {"site_id": str(site_id), "hours": hours}
         )
 
         data = []
@@ -131,7 +132,7 @@ def get_flow_timeseries(
 
 @router.get("/anomalies/timeseries")
 def get_anomaly_timeseries(
-    site_id: str,
+    site_id: UUID,
     hours: int = 24,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_viewer)
@@ -152,7 +153,7 @@ def get_anomaly_timeseries(
                 GROUP BY hour
                 ORDER BY hour ASC
             """),
-            {"site_id": site_id, "hours": hours}
+            {"site_id": str(site_id), "hours": hours}
         )
 
         # Build a map of hours to scores
@@ -181,7 +182,7 @@ def get_anomaly_timeseries(
 
 @router.get("/overview")
 async def get_dashboard_overview(
-    site_id: str,
+    site_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_viewer)
 ):
@@ -198,7 +199,7 @@ async def get_dashboard_overview(
                 FROM alerts
                 WHERE site_id = :site_id
             """),
-            {"site_id": site_id}
+            {"site_id": str(site_id)}
         )
         alert_row = alert_result.fetchone()
 
@@ -212,7 +213,7 @@ async def get_dashboard_overview(
                 FROM assets
                 WHERE site_id = :site_id
             """),
-            {"site_id": site_id}
+            {"site_id": str(site_id)}
         )
         device_row = device_result.fetchone()
 
@@ -226,19 +227,19 @@ async def get_dashboard_overview(
                 WHERE site_id = :site_id
                 AND ts_start > NOW() - INTERVAL '1 hour'
             """),
-            {"site_id": site_id}
+            {"site_id": str(site_id)}
         )
         traffic_row = traffic_result.fetchone()
 
         # Get site status
         site_result = db.execute(
             text("SELECT status FROM sites WHERE id = :site_id"),
-            {"site_id": site_id}
+            {"site_id": str(site_id)}
         )
         site_row = site_result.fetchone()
 
         return {
-            "site_id": site_id,
+            "site_id": str(site_id),
             "site_status": site_row.status if site_row else "unknown",
             "generated_at": datetime.utcnow().isoformat() + "Z",
             "alerts": {
@@ -268,7 +269,7 @@ async def get_dashboard_overview(
 
 @router.get("/traffic-chart")
 async def get_traffic_chart(
-    site_id: str,
+    site_id: UUID,
     hours: int = 24,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_viewer)
@@ -290,7 +291,7 @@ async def get_traffic_chart(
                 GROUP BY hour
                 ORDER BY hour DESC
             """),
-            {"site_id": site_id, "hours": hours}
+            {"site_id": str(site_id), "hours": hours}
         )
 
         data = []
@@ -305,7 +306,7 @@ async def get_traffic_chart(
             })
 
         return {
-            "site_id": site_id,
+            "site_id": str(site_id),
             "resolution": "1h",
             "data": data
         }

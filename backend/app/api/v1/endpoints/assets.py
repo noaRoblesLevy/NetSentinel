@@ -50,7 +50,7 @@ class AssetUpdate(BaseModel):
 
 @router.get("", response_model=AssetListResponse)
 async def list_assets(
-    site_id: str,
+    site_id: UUID,
     role_tag: Optional[str] = None,
     search: Optional[str] = None,
     page: int = Query(1, ge=1),
@@ -62,7 +62,7 @@ async def list_assets(
     try:
         # Build query
         where_clauses = ["site_id = :site_id"]
-        params = {"site_id": site_id}
+        params = {"site_id": str(site_id)}
 
         if role_tag:
             where_clauses.append("role_tag = :role_tag")
@@ -127,7 +127,7 @@ async def list_assets(
 
 @router.get("/{asset_id}", response_model=AssetResponse)
 async def get_asset(
-    asset_id: str,
+    asset_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_viewer)
 ):
@@ -140,7 +140,7 @@ async def get_asset(
                 FROM assets
                 WHERE id = :asset_id
             """),
-            {"asset_id": asset_id}
+            {"asset_id": str(asset_id)}
         )
         row = result.fetchone()
 
@@ -175,7 +175,7 @@ async def get_asset(
 
 @router.patch("/{asset_id}", response_model=AssetResponse)
 async def update_asset(
-    asset_id: str,
+    asset_id: UUID,
     update: AssetUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_analyst)
@@ -184,7 +184,7 @@ async def update_asset(
     try:
         # Build update query
         updates = []
-        params = {"asset_id": asset_id}
+        params = {"asset_id": str(asset_id)}
 
         if update.custom_name is not None:
             updates.append("custom_name = :custom_name")

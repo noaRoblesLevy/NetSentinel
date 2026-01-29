@@ -3,7 +3,7 @@
 import logging
 from datetime import datetime
 from typing import List, Optional
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
@@ -26,7 +26,7 @@ class RuleConfig(BaseModel):
 
 class RuleCreate(BaseModel):
     """Request model for creating a rule."""
-    site_id: str
+    site_id: UUID
     name: str
     description: Optional[str] = None
     rule_type: str = "threshold"
@@ -80,7 +80,7 @@ def ensure_rules_table(db: Session):
 
 @router.get("", response_model=List[RuleResponse])
 def get_rules(
-    site_id: str,
+    site_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_viewer)
 ):
@@ -96,7 +96,7 @@ def get_rules(
                 WHERE site_id = :site_id
                 ORDER BY created_at DESC
             """),
-            {"site_id": site_id}
+            {"site_id": str(site_id)}
         )
 
         rules = []
@@ -122,7 +122,7 @@ def get_rules(
 
 @router.get("/{rule_id}", response_model=RuleResponse)
 def get_rule(
-    rule_id: str,
+    rule_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_viewer)
 ):
@@ -135,7 +135,7 @@ def get_rule(
                 FROM alert_rules
                 WHERE id = :rule_id
             """),
-            {"rule_id": rule_id}
+            {"rule_id": str(rule_id)}
         )
 
         row = result.fetchone()
@@ -183,7 +183,7 @@ def create_rule(
             """),
             {
                 "id": rule_id,
-                "site_id": rule.site_id,
+                "site_id": str(rule.site_id),
                 "name": rule.name,
                 "description": rule.description,
                 "rule_type": rule.rule_type,
@@ -195,7 +195,7 @@ def create_rule(
         db.commit()
 
         # Fetch the created rule
-        return get_rule(rule_id, db)
+        return get_rule(UUID(rule_id), db)
     except Exception as e:
         logger.error(f"Failed to create rule: {e}")
         db.rollback()
@@ -204,7 +204,7 @@ def create_rule(
 
 @router.patch("/{rule_id}", response_model=RuleResponse)
 def update_rule(
-    rule_id: str,
+    rule_id: UUID,
     rule: RuleUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_analyst)
@@ -214,7 +214,7 @@ def update_rule(
     try:
         # Build update query dynamically
         updates = []
-        params = {"rule_id": rule_id}
+        params = {"rule_id": str(rule_id)}
 
         if rule.name is not None:
             updates.append("name = :name")
@@ -255,7 +255,7 @@ def update_rule(
 
 @router.delete("/{rule_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_rule(
-    rule_id: str,
+    rule_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin)
 ):
@@ -263,7 +263,7 @@ def delete_rule(
     try:
         result = db.execute(
             text("DELETE FROM alert_rules WHERE id = :rule_id"),
-            {"rule_id": rule_id}
+            {"rule_id": str(rule_id)}
         )
         db.commit()
 
