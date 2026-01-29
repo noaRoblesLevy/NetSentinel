@@ -20,8 +20,10 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 from app.ml.model_manager import ModelManager, ModelVersion
+from app.config import get_settings
 
 logger = logging.getLogger(__name__)
+settings = get_settings()
 
 # Feature columns used for training
 FEATURE_COLUMNS = [
@@ -56,10 +58,7 @@ DEFAULT_N_ESTIMATORS = 100
 DEFAULT_MAX_SAMPLES = "auto"
 DEFAULT_RANDOM_STATE = 42
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://netsentinel:netsentinel_dev@localhost:5432/netsentinel"
-)
+DATABASE_URL = settings.database_url
 
 
 class TrainingPipeline:

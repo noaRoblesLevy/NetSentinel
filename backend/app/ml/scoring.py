@@ -19,13 +19,12 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.ml.model_manager import ModelManager, ModelVersion
 from app.ml.training import FEATURE_COLUMNS
+from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://netsentinel:netsentinel_dev@localhost:5432/netsentinel"
-)
+settings = get_settings()
+DATABASE_URL = settings.database_url
 
 # Scoring thresholds
 DEFAULT_ANOMALY_THRESHOLD = 0.0  # Isolation Forest: negative = anomaly

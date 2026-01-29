@@ -104,12 +104,9 @@ def cmd_score(args):
     else:
         # Get all active sites
         from sqlalchemy import create_engine, text
-        import os
-        DATABASE_URL = os.getenv(
-            "DATABASE_URL",
-            "postgresql://netsentinel:netsentinel_dev@localhost:5432/netsentinel"
-        )
-        eng = create_engine(DATABASE_URL)
+        from app.config import get_settings
+        settings = get_settings()
+        eng = create_engine(settings.database_url)
         with eng.connect() as conn:
             result = conn.execute(text("SELECT id FROM sites WHERE status = 'active'"))
             sites = [str(row[0]) for row in result.fetchall()]

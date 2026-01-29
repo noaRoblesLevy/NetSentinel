@@ -19,12 +19,12 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.config import get_settings
+
 logger = logging.getLogger(__name__)
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://netsentinel:netsentinel_dev@localhost:5432/netsentinel"
-)
+settings = get_settings()
+DATABASE_URL = settings.database_url
 
 # Alert threshold configuration
 CRITICAL_THRESHOLD = 0.95  # Single window triggers alert

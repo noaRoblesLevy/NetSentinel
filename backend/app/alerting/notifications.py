@@ -24,13 +24,12 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.alerting.engine import AlertCandidate
+from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://netsentinel:netsentinel_dev@localhost:5432/netsentinel"
-)
+settings = get_settings()
+DATABASE_URL = settings.database_url
 
 # Email configuration
 SMTP_HOST = os.getenv("SMTP_HOST", "localhost")

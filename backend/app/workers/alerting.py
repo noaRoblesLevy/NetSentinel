@@ -17,11 +17,12 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 from app.workers.celery_app import celery_app
+from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://netsentinel:netsentinel_dev@localhost:5432/netsentinel")
-engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+settings = get_settings()
+engine = create_engine(settings.database_url, pool_pre_ping=True)
 SessionLocal = sessionmaker(bind=engine)
 
 # Lazy imports to avoid circular dependencies
