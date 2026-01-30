@@ -44,7 +44,11 @@ export function Login() {
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             {error && (
-              <div className="p-3 text-sm text-red-500 bg-red-50 dark:bg-red-950/50 rounded-lg">
+              <div
+                role="alert"
+                aria-live="polite"
+                className="p-3 text-sm text-red-500 bg-red-50 dark:bg-red-950/50 rounded-lg"
+              >
                 {error}
               </div>
             )}
@@ -87,10 +91,16 @@ export function Login() {
               />
             </div>
 
-            <Button type="submit" className="w-full" disabled={isLoading}>
+            <Button
+              type="submit"
+              className="w-full"
+              disabled={isLoading}
+              aria-busy={isLoading}
+              aria-label={isLoading ? 'Signing in, please wait' : 'Sign in to your account'}
+            >
               {isLoading ? (
                 <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
                   Signing in...
                 </>
               ) : (
